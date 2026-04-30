@@ -8,10 +8,10 @@ from src.harness.evaluation import evaluate_agent_output
 
 def main():
     agent_input = AgentInput(
-        task_id="test-002",
+        task_id="test-failure-001",
         input_type="drawing",
         source=Source(
-            file_path="sample.pdf",
+            file_path="",  # intentionally invalid
             file_type="pdf",
         ),
         metadata=Metadata(

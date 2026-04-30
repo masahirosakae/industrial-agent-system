@@ -1,0 +1,15 @@
+{
+  "task_id": "sample-001",
+  "agent_name": "process_planning_agent",
+  "score": 1.0,
+  "passed": true,
+  "metrics": {
+    "schema_valid": true,
+    "has_result": true,
+    "has_processes": true,
+    "has_quality_checkpoints": true,
+    "confidence": 0.8,
+    "error_count": 0
+  },
+  "notes": []
+}

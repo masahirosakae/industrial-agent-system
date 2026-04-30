@@ -1,0 +1,20 @@
+{
+  "task_id": "sample-failure-001",
+  "agent_name": "harness",
+  "score": 0.2,
+  "passed": false,
+  "metrics": {
+    "schema_valid": true,
+    "has_result": false,
+    "has_processes": false,
+    "has_quality_checkpoints": false,
+    "confidence": 0.0,
+    "error_count": 1
+  },
+  "notes": [
+    "Result is missing.",
+    "No manufacturing processes found.",
+    "No quality checkpoints found.",
+    "Confidence is below threshold."
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "task_id": "sample-001",
+  "agent_name": "process_planning_agent",
+  "status": "success",
+  "result": {
+    "manufacturing_processes": [
+      {
+        "process_name": "drilling",
+        "description": "穴あけ加工",
+        "target_feature": "holes",
+        "quantity": 4,
+        "basis": "図面上の穴指示"
+      }
+    ],
+    "work_items": [
+      {
+        "work_name": "setup",
+        "required_input": "tooling",
+        "expected_output": "ready state"
+      }
+    ],
+    "quality_checkpoints": [
+      {
+        "checkpoint": "hole_diameter",
+        "reason": "重要寸法",
+        "inspection_method": "measurement"
+      }
+    ]
+  },
+  "confidence": 0.8,
+  "errors": [],
+  "notes": []
+}

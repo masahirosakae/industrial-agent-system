@@ -1,0 +1,9 @@
+{
+  "task_id": "sample-failure-001",
+  "agent_name": "harness",
+  "status": "failure",
+  "result": null,
+  "confidence": 0.0,
+  "errors": ["source.file_path is required."],
+  "notes": ["Execution stopped by Harness validation."]
+}
