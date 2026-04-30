@@ -1,4 +1,6 @@
 from collections.abc import Callable
+from src.harness.logger import log_execution
+
 
 from src.harness.schema import AgentInput, AgentOutput
 from src.harness.validator import (
@@ -31,6 +33,8 @@ def execute_agent(
         agent_output = agent_function(agent_input)
 
         validate_agent_output(agent_output)
+
+        log_execution(agent_input, agent_output)
 
         return agent_output
 
