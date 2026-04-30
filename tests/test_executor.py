@@ -3,6 +3,7 @@ from src.harness.executor import execute_agent
 from src.agents.process_planning_agent.mock_agent import (
     run_process_planning_agent,
 )
+from src.harness.evaluation import evaluate_agent_output
 
 
 def main():
@@ -25,7 +26,10 @@ def main():
         agent_function=run_process_planning_agent,
     )
 
+    evaluation = evaluate_agent_output(output)
+
     print(output)
+    print(evaluation)
 
 
 if __name__ == "__main__":
