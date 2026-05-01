@@ -344,7 +344,11 @@ def evaluate_agent_output(agent_output: AgentOutput) -> EvaluationResult:
         schema_valid=schema_valid,
     )
 
-    passed = score >= 0.8 and error_count == 0
+    passed = (
+        v2_result["scores"]["overall"] >= 0.8
+        and v2_result["error_count"] == 0
+        and v2_result["warning_count"] == 0
+    )
 
 
     for finding in basis_result["findings"]:
