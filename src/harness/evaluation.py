@@ -13,6 +13,7 @@ WEIGHTS = {
 PROCESS_TO_CHECKPOINT_RULES = {
     "machining": ["dimension"],
     "hole_processing": ["hole", "count"],
+    "drilling": ["hole", "diameter"],
     "surface_finish": ["surface", "roughness"],
     "inspection": ["inspection"],
 }
