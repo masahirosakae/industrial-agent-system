@@ -3,7 +3,6 @@ from src.harness.schema import (
     AgentOutput,
     PlanningResult,
     ManufacturingProcess,
-    WorkItem,
     QualityCheckpoint,
 )
 
@@ -17,34 +16,29 @@ def run_process_planning_agent(agent_input: AgentInput) -> AgentOutput:
 
     processes = [
         ManufacturingProcess(
+            process_id="P001",
+            process_type="drilling",
             process_name="drilling",
             description="穴あけ加工",
             target_feature="holes",
             quantity=4,
-            basis="図面上の穴指示"
-        )
-    ]
-
-    work_items = [
-        WorkItem(
-            work_name="setup",
-            required_input="tooling",
-            expected_output="ready state"
-        )
-    ]
-
-    quality_checkpoints = [
-        QualityCheckpoint(
-            checkpoint="hole_diameter",
-            reason="重要寸法",
-            inspection_method="measurement"
+            basis=["図面上の穴指示"],
+            quality_checkpoints=[
+                QualityCheckpoint(
+                    checkpoint_type="hole_diameter",
+                    description="穴径を確認する",
+                    inspection_method="measurement",
+                    basis=["図面上の穴径指示"],
+                )
+            ],
+            confidence=0.8,
+            needs_review=False,
         )
     ]
 
     result = PlanningResult(
         manufacturing_processes=processes,
-        work_items=work_items,
-        quality_checkpoints=quality_checkpoints
+        findings=[],
     )
 
     return AgentOutput(
@@ -54,5 +48,5 @@ def run_process_planning_agent(agent_input: AgentInput) -> AgentOutput:
         result=result,
         confidence=0.8,
         errors=[],
-        notes=[]
+        notes=[],
     )
