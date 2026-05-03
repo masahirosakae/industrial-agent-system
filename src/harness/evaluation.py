@@ -12,11 +12,11 @@ WEIGHTS = {
 
 PROCESS_TO_CHECKPOINT_RULES = {
     "machining": ["dimension"],
-    "hole_processing": ["hole", "count"],
     "drilling": ["hole", "diameter"],
     "tapping": ["thread"],
-    "surface_finish": ["surface", "roughness"],
-    "inspection": ["inspection"],
+    "milling": ["dimension", "surface"],
+    "surface_finishing": ["surface", "roughness"],
+    "inspection": ["inspection", "tolerance"],
 }
 
 VALID_PROCESS_TYPES = {
@@ -162,21 +162,54 @@ def evaluate_quality_checkpoint_consistency(result) -> dict:
         })
         return {"score": 0.0, "findings": findings}
 
-    missing_count = 0
+    invalid_count = 0
 
     for process in processes:
         process_name = getattr(process, "process_name", "unknown")
+        process_type = str(getattr(process, "process_type", "")).strip().lower()
         checkpoints = getattr(process, "quality_checkpoints", [])
 
         if not checkpoints:
-            missing_count += 1
+            invalid_count += 1
             findings.append({
                 "severity": "warning",
                 "category": "quality_checkpoint_consistency",
                 "message": f"No quality checkpoints found for process: {process_name}"
             })
+            continue
 
-    score = 1.0 - (missing_count / len(processes))
+        expected_keywords = PROCESS_TO_CHECKPOINT_RULES.get(process_type)
+
+        if expected_keywords is None:
+            findings.append({
+                "severity": "info",
+                "category": "quality_checkpoint_consistency",
+                "message": f"No checkpoint rule defined for process_type: {process_type}"
+            })
+            continue
+
+        checkpoint_text = " ".join(
+            " ".join([
+                str(getattr(checkpoint, "checkpoint_type", "")),
+                str(getattr(checkpoint, "description", "")),
+                str(getattr(checkpoint, "inspection_method", "")),
+                " ".join(getattr(checkpoint, "basis", []) or []),
+            ])
+            for checkpoint in checkpoints
+        ).lower()
+
+        if not any(keyword in checkpoint_text for keyword in expected_keywords):
+            invalid_count += 1
+            findings.append({
+                "severity": "warning",
+                "category": "quality_checkpoint_consistency",
+                "message": (
+                    f"Quality checkpoint may not match process_type '{process_type}' "
+                    f"for process: {process_name}"
+                )
+            })
+
+    score = 1.0 - (invalid_count / len(processes))
 
     return {
         "score": round(score, 3),

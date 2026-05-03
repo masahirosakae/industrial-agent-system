@@ -180,6 +180,24 @@ def test_unknown_process_type_should_need_review():
     assert evaluation.metrics["warning_count"] > 0
 
 
+def test_checkpoint_mismatch_should_need_review():
+    output = make_valid_agent_output()
+    assert output.result is not None
+
+    process = output.result.manufacturing_processes[0]
+    process.process_type = "drilling"
+    process.quality_checkpoints[0].checkpoint_type = "thread_check"
+    process.quality_checkpoints[0].description = "Check thread quality."
+    process.quality_checkpoints[0].inspection_method = "thread gauge"
+    process.quality_checkpoints[0].basis = ["M8 thread"]
+
+    evaluation = evaluate_agent_output(output)
+
+    assert evaluation.passed is False
+    assert evaluation.metrics["quality_checkpoint_consistency"] < 1.0
+    assert evaluation.metrics["warning_count"] > 0
+
+
 def run_test(test_func):
     try:
         test_func()
@@ -203,6 +221,7 @@ if __name__ == "__main__":
         test_low_confidence_should_need_review,
         test_success_status_with_errors_should_fail,
         test_unknown_process_type_should_need_review,
+        test_checkpoint_mismatch_should_need_review,
     ]
 
     for test in tests:
