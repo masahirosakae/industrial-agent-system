@@ -168,3 +168,30 @@ Process Planning Agentは副作用を持たず、入力に対して構造化出�
 - notes は評価スコアには直接反映せず、ログ・補足情報として扱う
 - findings は不確実性を正しく表明できている場合、必ずしも悪い出力とはみなさない
 
+
+## 12. Evaluation Feedback Rules
+
+以下の条件は、Evaluation Harness により needs_review または failure として扱う。
+
+### needs_review とする条件
+
+- process_type が unknown の場合
+- confidence が 0.7 未満の場合
+- quantity が null の場合
+- basis が空の場合
+- quality_checkpoints が空の場合
+- process_type と quality_checkpoint の内容が整合しない場合
+
+### failure とする条件
+
+- result が null の場合
+- manufacturing_processes が空の場合
+- AgentOutput.errors が1件以上存在する場合
+- 出力スキーマに違反している場合
+
+### 補足
+
+- unknown は不正値ではなく、判断保留を示す値として扱う
+- unknown が出力された場合、process_validity のスコアは下げない
+- ただし Human Review 対象とする
+- process_type と quality_checkpoint の整合性は、PROCESS_TO_CHECKPOINT_RULES に基づいて評価する
