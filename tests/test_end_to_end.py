@@ -7,10 +7,8 @@ from src.harness.evaluation import evaluate_agent_output
 from src.agents.process_planning_agent.mock_agent import run_process_planning_agent
 
 
-def test_end_to_end_basic():
-
-    # ===== ① 入力（仕様テキスト）=====
-    agent_input = AgentInput(
+def create_sample_input() -> AgentInput:
+    return AgentInput(
         task_id="e2e_001",
         input_type="specification",
         source=Source(
@@ -24,10 +22,10 @@ def test_end_to_end_basic():
         ),
     )
 
-    # ===== ② Agent実行 =====
-    agent_output = run_process_planning_agent(agent_input)
 
-    # ===== ③ evaluation =====
+def test_end_to_end_basic():
+    agent_input = create_sample_input()
+    agent_output = run_process_planning_agent(agent_input)
     evaluation = evaluate_agent_output(agent_output)
 
     print("\n=== Agent Output ===")
@@ -36,10 +34,27 @@ def test_end_to_end_basic():
     print("\n=== Evaluation ===")
     print(evaluation)
 
-    # ===== ④ 最低限の検証 =====
     assert agent_output is not None
     assert evaluation is not None
     assert "overall" in evaluation.metrics
 
+
+def run_end_to_end_with_mode(mode: str):
+    agent_input = create_sample_input()
+    agent_output = run_process_planning_agent(agent_input, mode=mode)
+    evaluation = evaluate_agent_output(agent_output)
+
+    print(f"\n=== Mode: {mode} ===")
+    print(evaluation)
+
+    return evaluation
+
+
 if __name__ == "__main__":
     test_end_to_end_basic()
+
+    run_end_to_end_with_mode("valid")
+    run_end_to_end_with_mode("missing_basis")
+    run_end_to_end_with_mode("missing_quantity")
+    run_end_to_end_with_mode("invalid_process_type")
+    run_end_to_end_with_mode("checkpoint_mismatch")

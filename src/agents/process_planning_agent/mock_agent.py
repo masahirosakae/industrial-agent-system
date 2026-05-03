@@ -7,37 +7,44 @@ from src.harness.schema import (
 )
 
 
-def run_process_planning_agent(agent_input: AgentInput) -> AgentOutput:
-    """
-    Mock implementation of Process Planning Agent.
-    This does NOT use LLM.
-    It returns a fixed, schema-compliant response.
-    """
+def run_process_planning_agent(agent_input: AgentInput, mode: str = "valid") -> AgentOutput:
 
-    processes = [
-        ManufacturingProcess(
-            process_id="P001",
-            process_type="drilling",
-            process_name="drilling",
-            description="穴あけ加工",
-            target_feature="holes",
-            quantity=4,
-            basis=["図面上の穴指示"],
-            quality_checkpoints=[
-                QualityCheckpoint(
-                    checkpoint_type="hole_diameter",
-                    description="穴径を確認する",
-                    inspection_method="measurement",
-                    basis=["図面上の穴径指示"],
-                )
-            ],
-            confidence=0.8,
-            needs_review=False,
-        )
-    ]
+    process = ManufacturingProcess(
+        process_id="P001",
+        process_type="drilling",
+        process_name="drilling",
+        description="穴あけ加工",
+        target_feature="holes",
+        quantity=4,
+        basis=["図面上の穴指示"],
+        quality_checkpoints=[
+            QualityCheckpoint(
+                checkpoint_type="hole_diameter",
+                description="穴径を確認する",
+                inspection_method="measurement",
+                basis=["図面上の穴径指示"],
+            )
+        ],
+        confidence=0.8,
+        needs_review=False,
+    )
+
+    if mode == "missing_basis":
+        process.basis = []
+
+    elif mode == "missing_quantity":
+        process.quantity = None
+
+    elif mode == "invalid_process_type":
+        process.process_type = "invalid_type"
+
+    elif mode == "checkpoint_mismatch":
+        process.process_type = "drilling"
+        process.quality_checkpoints[0].checkpoint_type = "thread_check"
+        process.quality_checkpoints[0].description = "ねじ確認"
 
     result = PlanningResult(
-        manufacturing_processes=processes,
+        manufacturing_processes=[process],
         findings=[],
     )
 
