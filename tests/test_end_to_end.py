@@ -4,7 +4,7 @@ from src.harness.schema import (
     Metadata,
 )
 from src.harness.evaluation import evaluate_agent_output
-from src.agents.process_planning_agent.mock_agent import run_process_planning_agent
+from src.agents.process_planning_agent.process_planning_agent import RuleBasedProcessPlanningAgent
 
 
 def create_sample_input() -> AgentInput:
@@ -12,7 +12,7 @@ def create_sample_input() -> AgentInput:
         task_id="e2e_001",
         input_type="specification",
         source=Source(
-            file_path="dummy_spec.txt",
+            file_path="dummy_spec_穴_4ヶ所.txt",
             file_type="text",
         ),
         metadata=Metadata(
@@ -25,7 +25,10 @@ def create_sample_input() -> AgentInput:
 
 def test_end_to_end_basic():
     agent_input = create_sample_input()
-    agent_output = run_process_planning_agent(agent_input)
+
+    agent = RuleBasedProcessPlanningAgent()
+    agent_output = agent.run(agent_input)
+
     evaluation = evaluate_agent_output(agent_output)
 
     print("\n=== Agent Output ===")
@@ -39,22 +42,5 @@ def test_end_to_end_basic():
     assert "overall" in evaluation.metrics
 
 
-def run_end_to_end_with_mode(mode: str):
-    agent_input = create_sample_input()
-    agent_output = run_process_planning_agent(agent_input, mode=mode)
-    evaluation = evaluate_agent_output(agent_output)
-
-    print(f"\n=== Mode: {mode} ===")
-    print(evaluation)
-
-    return evaluation
-
-
 if __name__ == "__main__":
     test_end_to_end_basic()
-
-    run_end_to_end_with_mode("valid")
-    run_end_to_end_with_mode("missing_basis")
-    run_end_to_end_with_mode("missing_quantity")
-    run_end_to_end_with_mode("invalid_process_type")
-    run_end_to_end_with_mode("checkpoint_mismatch")
