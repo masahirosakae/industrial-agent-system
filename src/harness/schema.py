@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Literal
 
 
 InputType = Literal["drawing", "specification"]
@@ -29,12 +29,25 @@ class AgentInput:
 
 
 @dataclass
+class QualityCheckpoint:
+    checkpoint_type: str
+    description: str
+    inspection_method: str
+    basis: list[str]
+
+
+@dataclass
 class ManufacturingProcess:
+    process_id: str
+    process_type: str
     process_name: str
     description: str
     target_feature: str
-    quantity: int | str
-    basis: str
+    quantity: int | float | None
+    basis: list[str]
+    quality_checkpoints: list[QualityCheckpoint]
+    confidence: float
+    needs_review: bool
 
 
 @dataclass
@@ -45,17 +58,9 @@ class WorkItem:
 
 
 @dataclass
-class QualityCheckpoint:
-    checkpoint: str
-    reason: str
-    inspection_method: str
-
-
-@dataclass
 class PlanningResult:
-    manufacturing_processes: list[ManufacturingProcess] = field(default_factory=list)
-    work_items: list[WorkItem] = field(default_factory=list)
-    quality_checkpoints: list[QualityCheckpoint] = field(default_factory=list)
+    manufacturing_processes: list[ManufacturingProcess]
+    findings: list[dict] = field(default_factory=list)
 
 
 @dataclass

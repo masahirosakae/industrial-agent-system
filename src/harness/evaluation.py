@@ -229,6 +229,33 @@ def evaluate_process_validity(result) -> dict:
     }
 
 
+def evaluate_unknown_process_type(result) -> dict:
+    findings = []
+    processes = getattr(result, "manufacturing_processes", [])
+
+    if not processes:
+        return {"score": 1.0, "findings": findings}
+
+    unknown_count = 0
+
+    for i, process in enumerate(processes):
+        process_type = str(getattr(process, "process_type", "")).strip().lower()
+
+        if process_type == "unknown":
+            unknown_count += 1
+            findings.append({
+                "severity": "warning",
+                "category": "process_validity",
+                "message": f"process_type is 'unknown' at index {i}"
+            })
+
+    # スコアは落とさない（重要）
+    return {
+        "score": 1.0,
+        "findings": findings
+    }
+
+
 @dataclass
 class EvaluationResult:
     task_id: str
@@ -260,6 +287,7 @@ def evaluate_agent_output(agent_output: AgentOutput) -> EvaluationResult:
     quantity_result = {"score": 0.0, "findings": []}
     consistency_result = {"score": 0.0, "findings": []}
     process_result = {"score": 0.0, "findings": []}
+    unknown_result = {"score": 1.0, "findings": []}
 
     if has_result:
         has_processes = len(result.manufacturing_processes) > 0
@@ -272,6 +300,7 @@ def evaluate_agent_output(agent_output: AgentOutput) -> EvaluationResult:
         quantity_result = evaluate_quantity_validity(result)
         consistency_result = evaluate_quality_checkpoint_consistency(result)
         process_result = evaluate_process_validity(result)
+        unknown_result = evaluate_unknown_process_type(result)
 
     confidence = agent_output.confidence
     error_count = len(agent_output.errors)
@@ -311,11 +340,13 @@ def evaluate_agent_output(agent_output: AgentOutput) -> EvaluationResult:
 
     score = min(score, 1.0)
 
-    all_findings = []
-    all_findings.extend(process_result["findings"])
-    all_findings.extend(consistency_result["findings"])
-    all_findings.extend(basis_result["findings"])
-    all_findings.extend(quantity_result["findings"])
+    all_findings = (
+        basis_result["findings"]
+        + quantity_result["findings"]
+        + consistency_result["findings"]
+        + process_result["findings"]
+        + unknown_result["findings"]
+    )
 
     v2_scores = {
         "process_validity": process_result["score"],
@@ -335,6 +366,7 @@ def evaluate_agent_output(agent_output: AgentOutput) -> EvaluationResult:
         and v2_result["error_count"] == 0
         and v2_result["warning_count"] == 0
         and error_count == 0
+        and confidence >= 0.7
     )
 
 
@@ -348,6 +380,9 @@ def evaluate_agent_output(agent_output: AgentOutput) -> EvaluationResult:
         notes.append(finding["message"])
 
     for finding in process_result["findings"]:
+        notes.append(finding["message"])
+
+    for finding in unknown_result["findings"]:
         notes.append(finding["message"])
 
     return EvaluationResult(
