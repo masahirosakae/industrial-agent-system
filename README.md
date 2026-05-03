@@ -3,16 +3,33 @@
 量産工場の業務をAgent単位に分解し、Harness上で信頼性高く動かすためのMulti-Agent Systemを設計・検証するプロジェクト
 
 ![status](https://img.shields.io/badge/status-PoC-orange)
-![stage](https://img.shields.io/badge/stage-Ph.0-lightgrey)
+![stage](https://img.shields.io/badge/stage-Ph.2-lightgrey)
 ![license](https://img.shields.io/badge/license-TBD-blue)
 
-
+## English Version
+For English README, see: [README_EN.md](./README_EN.md)
 
 ## 概要
 
 **Industrial Agent System** は、量産工場の業務プロセスを「Agent」という機能単位に分解し、それらを協調動作させるためのMulti-Agent Systemを構築するプロジェクトです。
 中核となる関心は、賢いAIモデルを作ることではなく、**Agentを安全・再現性高く動かすための仕組み(Harness)** を設計することにあります。
 現時点では研究・PoCフェーズであり、本番運用を保証するものではありません。
+
+
+## 現在の到達状況（Current Status）
+
+本プロジェクトは現在 PoC（概念実証）段階にあり、以下の機能を実装・検証済みです。
+
+- schema v0.2 実装（AgentInput / AgentOutput / PlanningResult）
+- evaluation v0.2 実装（構造・品質評価）
+- RuleBasedProcessPlanningAgent 実装（決定論ベース）
+- LocalLLMProcessPlanningAgent 実装（Ollama + Qwen2.5 1.5B）
+- pytest による E2E テスト（drilling / milling / unknown）
+- LLM出力に対する Parser + Fallback 補正機構
+
+現在は「LLMの出力をそのまま信頼する」のではなく、Harness側で構造・品質を保証する設計を採用しています。
+
+本プロジェクトは現在 **Ph.2（MVP Agent実装完了）/ Ph.3（評価基盤構築）進行中** の状態にあります。
 
 
 ## ビジョン
@@ -83,6 +100,35 @@ Agentの実装は差し替え可能(LLM・モデル・プロンプトは進化�
 しかしHarnessは長期的資産として育てます。これが本プロジェクトの設計上の核心です。
 
 
+## アーキテクチャ概要
+
+本システムは以下の構造で動作します：
+
+```text
+AgentInput
+↓
+Agent（Rule-based / Local LLM）
+↓
+LLM（任意：Ollama / API）
+↓
+Parser（構造補正）
+↓
+Fallback（ルール補完）
+↓
+PlanningResult（schema準拠）
+↓
+Evaluation Harness（品質評価）
+```
+
+この構造により、
+
+- LLM非依存
+- 評価可能
+- 再現可能
+
+なAgent設計を実現しています。
+
+
 ## MVP
 
 最初に取り組むMVPは以下です。
@@ -95,6 +141,26 @@ Agentの実装は差し替え可能(LLM・モデル・プロンプトは進化�
 
 MVPの段階では業務の全自動化は目指しません。**「人が判断していた一部の工程を、Harness上で再現性をもって支援する」** ことをゴールとします。
 評価観点としては、精度・再現性・出力妥当性・人手削減効果などを指標とする。
+
+
+## Local LLM Agent の現状と制約
+
+LocalLLMProcessPlanningAgent は、Ollama + Qwen を用いたローカルLLM接続検証のための実装です。
+
+現時点では以下の制約があります：
+
+- LLM単体では安定した工程設計出力はできない
+- JSON構造の崩れやフィールド欠落が発生する
+- 入力理解の精度は限定的
+
+そのため本プロジェクトでは以下の構成を採用しています：
+
+1. LLM出力を Parser で schema準拠へ変換
+2. 不足情報を deterministic rule で補完（Fallback）
+3. Evaluation Harness により品質検証
+
+この設計により、LLMの不安定性を吸収しつつ、
+再現性のある評価可能な出力を実現しています。
 
 
 ## なぜ重要か
@@ -122,7 +188,7 @@ MVPの段階では業務の全自動化は目指しません。**「人が判断
 │   ├── architecture/       # システム構成図・設計判断
 │   ├── agents/             # Agent別の責務・契約
 │   ├── harness/            # Harness設計仕様
-│   └──architecture.md      # システムアーキテクト仕様[docs/architecture.md](docs/architecture.md)
+│   └── architecture.md      # システムアーキテクト仕様
 ├── src/                    # 実装コード
 │   ├── harness/            # Harness本体(schema、実行制御、評価、ログ)
 │   └── agents/             # 個別Agent実装
@@ -131,6 +197,17 @@ MVPの段階では業務の全自動化は目指しません。**「人が判断
 └── tests/                  # テストコード
 ```
 
+
+## テスト
+
+pytest により以下のケースを検証しています。
+
+- drilling（穴加工）
+- milling（フライス加工）
+- unknown（工程なし）
+
+Local LLM Agent は不安定な出力を行う可能性があるため、
+Parser + Fallback により schema準拠の結果へ補正されます。
 
 
 ## 位置づけ
@@ -156,10 +233,27 @@ MVPの段階では業務の全自動化は目指しません。**「人が判断
 - 利用は自己責任でお願いします
 
 
+## 実行方法
+
+### テスト実行
+
+```bash
+python -m pytest tests -v -s
+```
+
+### Local LLM起動（Ollama）
+
+```bash
+ollama run qwen2.5:1.5b
+```
+
+※ Ollama は事前にインストールが必要です（https://ollama.com/）
+
 
 ## 最後に
 
-製造業の自動化は、単一のすごいモデルや派手なデモで実現するものではありません。**業務を正しく分解し、振る舞いを枠にはめ、評価し続ける地道な仕組み** によってのみ、現場で信頼される系が育ちます。
+製造業の自動化は、単一のすごいモデルや派手なデモで実現するものではありません。
+**業務を正しく分解し、振る舞いを枠にはめ、評価し続ける地道な仕組み** によってのみ、現場で信頼される系が育ちます。
 
 Agentは進化し、入れ替わります。しかし、Agentを安全に動かす土台は長く残ります。
 

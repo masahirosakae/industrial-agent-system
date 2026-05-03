@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Literal
 
-
 InputType = Literal["drawing", "specification"]
 FileType = Literal["pdf", "image", "text"]
 AgentStatus = Literal["success", "failure", "needs_review"]

@@ -7,7 +7,9 @@ from src.harness.schema import (
 )
 
 
-def run_process_planning_agent(agent_input: AgentInput, mode: str = "valid") -> AgentOutput:
+def run_process_planning_agent(
+    agent_input: AgentInput, mode: str = "valid"
+) -> AgentOutput:
 
     process = ManufacturingProcess(
         process_id="P001",

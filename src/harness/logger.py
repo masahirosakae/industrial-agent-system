@@ -4,7 +4,6 @@ from pathlib import Path
 
 from src.harness.schema import AgentInput, AgentOutput
 
-
 LOG_DIR = Path("logs")
 LOG_DIR.mkdir(exist_ok=True)
 
@@ -37,10 +36,7 @@ def serialize(obj):
     Convert dataclass to dict recursively.
     """
     if hasattr(obj, "__dict__"):
-        return {
-            key: serialize(value)
-            for key, value in obj.__dict__.items()
-        }
+        return {key: serialize(value) for key, value in obj.__dict__.items()}
     elif isinstance(obj, list):
         return [serialize(i) for i in obj]
     else:

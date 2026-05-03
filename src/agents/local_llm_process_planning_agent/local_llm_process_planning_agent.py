@@ -176,9 +176,13 @@ class LocalLLMProcessPlanningAgent:
 
                     checkpoints.append(
                         QualityCheckpoint(
-                            checkpoint_type=qc.get("checkpoint_type", default_checkpoint_type),
+                            checkpoint_type=qc.get(
+                                "checkpoint_type", default_checkpoint_type
+                            ),
                             description=qc.get("description", "品質確認を行う"),
-                            inspection_method=qc.get("inspection_method", "measurement"),
+                            inspection_method=qc.get(
+                                "inspection_method", "measurement"
+                            ),
                             basis=qc.get("basis", ["品質確認が必要なため"]),
                         )
                     )
@@ -190,7 +194,9 @@ class LocalLLMProcessPlanningAgent:
                     description=p.get("description", default_process_name),
                     target_feature=p.get("target_feature", default_target_feature),
                     quantity=p.get("quantity", 1),
-                    basis=p.get("basis", [f"LLM output indicated process_type={process_type}"]),
+                    basis=p.get(
+                        "basis", [f"LLM output indicated process_type={process_type}"]
+                    ),
                     quality_checkpoints=checkpoints,
                     confidence=p.get("confidence", 0.6),
                     needs_review=p.get("needs_review", False),
@@ -280,15 +286,19 @@ class LocalLLMProcessPlanningAgent:
                     }
                 ],
             )
-        
-    def _fallback_process_from_input(self, agent_input: AgentInput) -> ManufacturingProcess | None:
-        text = "\n".join([
-            agent_input.input_type,
-            agent_input.source.file_path,
-            agent_input.source.file_type,
-            agent_input.metadata.part_name,
-            agent_input.metadata.drawing_type,
-        ])
+
+    def _fallback_process_from_input(
+        self, agent_input: AgentInput
+    ) -> ManufacturingProcess | None:
+        text = "\n".join(
+            [
+                agent_input.input_type,
+                agent_input.source.file_path,
+                agent_input.source.file_type,
+                agent_input.metadata.part_name,
+                agent_input.metadata.drawing_type,
+            ]
+        )
 
         if self._contains_any(text, ["穴", "φ", "Φ", "M", "ねじ", "タップ", "ヶ所"]):
             checkpoint = QualityCheckpoint(
@@ -305,13 +315,17 @@ class LocalLLMProcessPlanningAgent:
                 description="入力情報に基づく穴加工",
                 target_feature="穴",
                 quantity=4 if "4" in text else 1,
-                basis=["入力情報に穴、φ、M、ねじ、タップ、ヶ所のいずれかが含まれるため"],
+                basis=[
+                    "入力情報に穴、φ、M、ねじ、タップ、ヶ所のいずれかが含まれるため"
+                ],
                 quality_checkpoints=[checkpoint],
                 confidence=0.6,
                 needs_review=True,
             )
 
-        if self._contains_any(text, ["フライス", "面加工", "外形", "輪郭", "段付き", "ポケット"]):
+        if self._contains_any(
+            text, ["フライス", "面加工", "外形", "輪郭", "段付き", "ポケット"]
+        ):
             checkpoint = QualityCheckpoint(
                 checkpoint_type="outer_dimension",
                 description="外形寸法確認",
@@ -326,14 +340,15 @@ class LocalLLMProcessPlanningAgent:
                 description="入力情報に基づくフライス加工",
                 target_feature="外形・面加工部",
                 quantity=1,
-                basis=["入力情報にフライス、面加工、外形、輪郭、段付き、ポケットのいずれかが含まれるため"],
+                basis=[
+                    "入力情報にフライス、面加工、外形、輪郭、段付き、ポケットのいずれかが含まれるため"
+                ],
                 quality_checkpoints=[checkpoint],
                 confidence=0.6,
                 needs_review=True,
             )
 
         return None
-
 
     def _contains_any(self, text: str, keywords: list[str]) -> bool:
         return any(keyword in text for keyword in keywords)

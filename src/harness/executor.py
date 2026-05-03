@@ -9,7 +9,6 @@ from src.harness.validator import (
     ValidationError,
 )
 
-
 AgentFunction = Callable[[AgentInput], AgentOutput]
 
 
@@ -40,7 +39,9 @@ def execute_agent(
 
     except ValidationError as error:
         return AgentOutput(
-            task_id=agent_input.task_id if hasattr(agent_input, "task_id") else "unknown",
+            task_id=(
+                agent_input.task_id if hasattr(agent_input, "task_id") else "unknown"
+            ),
             agent_name="harness",
             status="failure",
             result=None,

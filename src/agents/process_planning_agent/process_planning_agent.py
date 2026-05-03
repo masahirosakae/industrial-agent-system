@@ -23,21 +23,19 @@ class RuleBasedProcessPlanningAgent:
                 )
 
             if self._has_milling_feature(source_text):
-                manufacturing_processes.append(
-                    self._create_milling_process()
-                )
+                manufacturing_processes.append(self._create_milling_process())
 
             if self._has_surface_finish_feature(source_text):
-                manufacturing_processes.append(
-                    self._create_surface_finish_process()
-                )
+                manufacturing_processes.append(self._create_surface_finish_process())
 
             if not manufacturing_processes:
-                findings.append({
-                    "level": "warning",
-                    "category": "no_process_detected",
-                    "message": "No manufacturing process could be determined by rule-based logic.",
-                })
+                findings.append(
+                    {
+                        "level": "warning",
+                        "category": "no_process_detected",
+                        "message": "No manufacturing process could be determined by rule-based logic.",
+                    }
+                )
 
                 result = PlanningResult(
                     manufacturing_processes=[],
@@ -86,14 +84,16 @@ class RuleBasedProcessPlanningAgent:
             )
 
     def _collect_source_text(self, agent_input: AgentInput) -> str:
-        return "\n".join([
-            agent_input.input_type,
-            agent_input.source.file_path,
-            agent_input.source.file_type,
-            agent_input.metadata.part_name,
-            agent_input.metadata.drawing_type,
-            agent_input.metadata.created_at,
-        ])
+        return "\n".join(
+            [
+                agent_input.input_type,
+                agent_input.source.file_path,
+                agent_input.source.file_type,
+                agent_input.metadata.part_name,
+                agent_input.metadata.drawing_type,
+                agent_input.metadata.created_at,
+            ]
+        )
 
     def _create_drilling_process(self, text: str) -> ManufacturingProcess:
         checkpoint = QualityCheckpoint(
@@ -110,7 +110,9 @@ class RuleBasedProcessPlanningAgent:
             description="図面または仕様内の穴・ねじ・径指示に基づく穴加工",
             target_feature="穴、ねじ穴、径指定部",
             quantity=self._estimate_quantity(text),
-            basis=["入力情報に穴、φ、M、ねじ、タップ、深さ指示のいずれかが含まれるため"],
+            basis=[
+                "入力情報に穴、φ、M、ねじ、タップ、深さ指示のいずれかが含まれるため"
+            ],
             quality_checkpoints=[checkpoint],
             confidence=0.85,
             needs_review=False,
@@ -131,7 +133,9 @@ class RuleBasedProcessPlanningAgent:
             description="面加工または外形加工に関する指示に基づくフライス加工",
             target_feature="平面、外形、段付き部、ポケット部",
             quantity=1,
-            basis=["入力情報に面加工、フライス、外形、輪郭、切削、段付き、ポケットのいずれかが含まれるため"],
+            basis=[
+                "入力情報に面加工、フライス、外形、輪郭、切削、段付き、ポケットのいずれかが含まれるため"
+            ],
             quality_checkpoints=[checkpoint],
             confidence=0.85,
             needs_review=False,

@@ -4,7 +4,9 @@ from src.harness.schema import (
     Metadata,
 )
 from src.harness.evaluation import evaluate_agent_output
-from src.agents.process_planning_agent.process_planning_agent import RuleBasedProcessPlanningAgent
+from src.agents.process_planning_agent.process_planning_agent import (
+    RuleBasedProcessPlanningAgent,
+)
 
 
 def create_sample_input() -> AgentInput:

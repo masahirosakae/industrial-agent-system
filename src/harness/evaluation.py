@@ -26,7 +26,7 @@ VALID_PROCESS_TYPES = {
     "milling",
     "surface_finishing",
     "inspection",
-    "unknown"
+    "unknown",
 }
 
 
@@ -40,7 +40,10 @@ def calculate_overall_score(scores: dict) -> float:
         total += scores.get(key, 0.0) * weight
     return round(total, 3)
 
-def build_evaluation_result(scores: dict, findings: list, schema_valid: bool = True) -> dict:
+
+def build_evaluation_result(
+    scores: dict, findings: list, schema_valid: bool = True
+) -> dict:
     overall = calculate_overall_score(scores)
 
     return {
@@ -55,20 +58,20 @@ def build_evaluation_result(scores: dict, findings: list, schema_valid: bool = T
         "findings": findings,
     }
 
+
 def evaluate_basis_validity(result) -> dict:
     findings = []
     processes = getattr(result, "manufacturing_processes", [])
 
     if not processes:
-        findings.append({
-            "severity": "error",
-            "category": "basis_validity",
-            "message": "No manufacturing processes found. Cannot evaluate basis validity."
-        })
-        return {
-            "score": 0.0,
-            "findings": findings
-        }
+        findings.append(
+            {
+                "severity": "error",
+                "category": "basis_validity",
+                "message": "No manufacturing processes found. Cannot evaluate basis validity.",
+            }
+        )
+        return {"score": 0.0, "findings": findings}
 
     missing_count = 0
 
@@ -78,18 +81,17 @@ def evaluate_basis_validity(result) -> dict:
 
         if not basis:
             missing_count += 1
-            findings.append({
-                "severity": "warning",
-                "category": "basis_validity",
-                "message": f"Basis is missing for process: {process_name}"
-            })
+            findings.append(
+                {
+                    "severity": "warning",
+                    "category": "basis_validity",
+                    "message": f"Basis is missing for process: {process_name}",
+                }
+            )
 
     score = 1.0 - (missing_count / len(processes))
 
-    return {
-        "score": round(score, 3),
-        "findings": findings
-    }
+    return {"score": round(score, 3), "findings": findings}
 
 
 def evaluate_quantity_validity(result) -> dict:
@@ -97,15 +99,14 @@ def evaluate_quantity_validity(result) -> dict:
     processes = getattr(result, "manufacturing_processes", [])
 
     if not processes:
-        findings.append({
-            "severity": "error",
-            "category": "quantity_validity",
-            "message": "No manufacturing processes found. Cannot evaluate quantity validity."
-        })
-        return {
-            "score": 0.0,
-            "findings": findings
-        }
+        findings.append(
+            {
+                "severity": "error",
+                "category": "quantity_validity",
+                "message": "No manufacturing processes found. Cannot evaluate quantity validity.",
+            }
+        )
+        return {"score": 0.0, "findings": findings}
 
     invalid_count = 0
     total_count = 0
@@ -119,35 +120,38 @@ def evaluate_quantity_validity(result) -> dict:
 
         if quantity is None:
             invalid_count += 1
-            findings.append({
-                "severity": "warning",
-                "category": "quantity_validity",
-                "message": f"Quantity is missing for process: {process_name}"
-            })
+            findings.append(
+                {
+                    "severity": "warning",
+                    "category": "quantity_validity",
+                    "message": f"Quantity is missing for process: {process_name}",
+                }
+            )
         else:
             try:
                 q = float(quantity)
                 if q <= 0:
                     invalid_count += 1
-                    findings.append({
-                        "severity": "warning",
-                        "category": "quantity_validity",
-                        "message": f"Invalid quantity (<=0) for process: {process_name}"
-                    })
+                    findings.append(
+                        {
+                            "severity": "warning",
+                            "category": "quantity_validity",
+                            "message": f"Invalid quantity (<=0) for process: {process_name}",
+                        }
+                    )
             except (ValueError, TypeError):
                 invalid_count += 1
-                findings.append({
-                    "severity": "warning",
-                    "category": "quantity_validity",
-                    "message": f"Non-numeric quantity for process: {process_name}"
-                })
+                findings.append(
+                    {
+                        "severity": "warning",
+                        "category": "quantity_validity",
+                        "message": f"Non-numeric quantity for process: {process_name}",
+                    }
+                )
 
     score = 1.0 - (invalid_count / total_count)
 
-    return {
-        "score": round(score, 3),
-        "findings": findings
-    }
+    return {"score": round(score, 3), "findings": findings}
 
 
 def evaluate_quality_checkpoint_consistency(result) -> dict:
@@ -155,11 +159,13 @@ def evaluate_quality_checkpoint_consistency(result) -> dict:
     processes = getattr(result, "manufacturing_processes", [])
 
     if not processes:
-        findings.append({
-            "severity": "error",
-            "category": "quality_checkpoint_consistency",
-            "message": "No manufacturing processes found. Cannot evaluate checkpoint consistency."
-        })
+        findings.append(
+            {
+                "severity": "error",
+                "category": "quality_checkpoint_consistency",
+                "message": "No manufacturing processes found. Cannot evaluate checkpoint consistency.",
+            }
+        )
         return {"score": 0.0, "findings": findings}
 
     invalid_count = 0
@@ -171,50 +177,55 @@ def evaluate_quality_checkpoint_consistency(result) -> dict:
 
         if not checkpoints:
             invalid_count += 1
-            findings.append({
-                "severity": "warning",
-                "category": "quality_checkpoint_consistency",
-                "message": f"No quality checkpoints found for process: {process_name}"
-            })
+            findings.append(
+                {
+                    "severity": "warning",
+                    "category": "quality_checkpoint_consistency",
+                    "message": f"No quality checkpoints found for process: {process_name}",
+                }
+            )
             continue
 
         expected_keywords = PROCESS_TO_CHECKPOINT_RULES.get(process_type)
 
         if expected_keywords is None:
-            findings.append({
-                "severity": "info",
-                "category": "quality_checkpoint_consistency",
-                "message": f"No checkpoint rule defined for process_type: {process_type}"
-            })
+            findings.append(
+                {
+                    "severity": "info",
+                    "category": "quality_checkpoint_consistency",
+                    "message": f"No checkpoint rule defined for process_type: {process_type}",
+                }
+            )
             continue
 
         checkpoint_text = " ".join(
-            " ".join([
-                str(getattr(checkpoint, "checkpoint_type", "")),
-                str(getattr(checkpoint, "description", "")),
-                str(getattr(checkpoint, "inspection_method", "")),
-                " ".join(getattr(checkpoint, "basis", []) or []),
-            ])
+            " ".join(
+                [
+                    str(getattr(checkpoint, "checkpoint_type", "")),
+                    str(getattr(checkpoint, "description", "")),
+                    str(getattr(checkpoint, "inspection_method", "")),
+                    " ".join(getattr(checkpoint, "basis", []) or []),
+                ]
+            )
             for checkpoint in checkpoints
         ).lower()
 
         if not any(keyword in checkpoint_text for keyword in expected_keywords):
             invalid_count += 1
-            findings.append({
-                "severity": "warning",
-                "category": "quality_checkpoint_consistency",
-                "message": (
-                    f"Quality checkpoint may not match process_type '{process_type}' "
-                    f"for process: {process_name}"
-                )
-            })
+            findings.append(
+                {
+                    "severity": "warning",
+                    "category": "quality_checkpoint_consistency",
+                    "message": (
+                        f"Quality checkpoint may not match process_type '{process_type}' "
+                        f"for process: {process_name}"
+                    ),
+                }
+            )
 
     score = 1.0 - (invalid_count / len(processes))
 
-    return {
-        "score": round(score, 3),
-        "findings": findings
-    }
+    return {"score": round(score, 3), "findings": findings}
 
 
 def evaluate_process_validity(result) -> dict:
@@ -222,15 +233,14 @@ def evaluate_process_validity(result) -> dict:
     processes = getattr(result, "manufacturing_processes", [])
 
     if not processes:
-        findings.append({
-            "severity": "error",
-            "category": "process_validity",
-            "message": "No manufacturing processes found."
-        })
-        return {
-            "score": 0.0,
-            "findings": findings
-        }
+        findings.append(
+            {
+                "severity": "error",
+                "category": "process_validity",
+                "message": "No manufacturing processes found.",
+            }
+        )
+        return {"score": 0.0, "findings": findings}
 
     invalid_count = 0
 
@@ -241,25 +251,26 @@ def evaluate_process_validity(result) -> dict:
         # ① process_type の検証（主軸）
         if process_type not in VALID_PROCESS_TYPES:
             invalid_count += 1
-            findings.append({
-                "severity": "warning",
-                "category": "process_validity",
-                "message": f"Invalid process_type '{process_type}' at index {i}"
-            })
+            findings.append(
+                {
+                    "severity": "warning",
+                    "category": "process_validity",
+                    "message": f"Invalid process_type '{process_type}' at index {i}",
+                }
+            )
 
         if not process_name or process_name.lower() in ("unknown", "n/a"):
-            findings.append({
-                "severity": "info",
-                "category": "process_validity",
-                "message": f"Missing or unclear process_name at index {i}"
-            })
+            findings.append(
+                {
+                    "severity": "info",
+                    "category": "process_validity",
+                    "message": f"Missing or unclear process_name at index {i}",
+                }
+            )
 
     score = 1.0 - (invalid_count / len(processes))
 
-    return {
-        "score": round(score, 3),
-        "findings": findings
-    }
+    return {"score": round(score, 3), "findings": findings}
 
 
 def evaluate_unknown_process_type(result) -> dict:
@@ -276,17 +287,16 @@ def evaluate_unknown_process_type(result) -> dict:
 
         if process_type == "unknown":
             unknown_count += 1
-            findings.append({
-                "severity": "warning",
-                "category": "process_validity",
-                "message": f"process_type is 'unknown' at index {i}"
-            })
+            findings.append(
+                {
+                    "severity": "warning",
+                    "category": "process_validity",
+                    "message": f"process_type is 'unknown' at index {i}",
+                }
+            )
 
     # スコアは落とさない（重要）
-    return {
-        "score": 1.0,
-        "findings": findings
-    }
+    return {"score": 1.0, "findings": findings}
 
 
 @dataclass
@@ -312,7 +322,7 @@ def evaluate_agent_output(agent_output: AgentOutput) -> EvaluationResult:
 
     schema_valid = agent_output.status in ("success", "failure", "needs_review")
     result = agent_output.result
-    
+
     has_result = result is not None
     has_processes = False
     has_quality_checkpoints = False
@@ -401,7 +411,6 @@ def evaluate_agent_output(agent_output: AgentOutput) -> EvaluationResult:
         and error_count == 0
         and confidence >= 0.7
     )
-
 
     for finding in basis_result["findings"]:
         notes.append(finding["message"])

@@ -14,14 +14,14 @@ def test_evaluation_basic():
             description="Machine φ10 hole",
             target_feature="φ10 hole",
             quantity=4,
-            basis="Drawing indicates φ10 hole."
+            basis="Drawing indicates φ10 hole.",
         ),
         ManufacturingProcess(
             process_name="inspection",
             description="Inspect machined feature",
             target_feature="φ10 hole",
             quantity=1,
-            basis="Inspection required after machining."
+            basis="Inspection required after machining.",
         ),
     ]
 
@@ -29,7 +29,7 @@ def test_evaluation_basic():
         QualityCheckpoint(
             checkpoint="dimension_check",
             reason="Confirm machined dimensions.",
-            inspection_method="caliper"
+            inspection_method="caliper",
         ),
     ]
 
@@ -56,6 +56,7 @@ def test_evaluation_basic():
     assert "quantity_validity" in evaluation.metrics
     assert "quality_checkpoint_consistency" in evaluation.metrics
     assert "process_validity" in evaluation.metrics
+
 
 if __name__ == "__main__":
     test_evaluation_basic()

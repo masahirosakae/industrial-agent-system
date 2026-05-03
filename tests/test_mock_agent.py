@@ -12,15 +12,10 @@ def main():
     agent_input = AgentInput(
         task_id="test-001",
         input_type="drawing",
-        source=Source(
-            file_path="sample.pdf",
-            file_type="pdf"
-        ),
+        source=Source(file_path="sample.pdf", file_type="pdf"),
         metadata=Metadata(
-            part_name="test_part",
-            drawing_type="plate",
-            created_at="2026-01-01"
-        )
+            part_name="test_part", drawing_type="plate", created_at="2026-01-01"
+        ),
     )
 
     # Input validation

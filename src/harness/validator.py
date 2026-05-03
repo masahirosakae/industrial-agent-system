@@ -6,6 +6,7 @@ from src.harness.schema import AgentInput, AgentOutput
 
 class ValidationError(Exception):
     """Harness validation error."""
+
     pass
 
 
