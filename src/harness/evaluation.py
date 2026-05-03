@@ -14,12 +14,24 @@ PROCESS_TO_CHECKPOINT_RULES = {
     "machining": ["dimension"],
     "hole_processing": ["hole", "count"],
     "drilling": ["hole", "diameter"],
+    "tapping": ["thread"],
     "surface_finish": ["surface", "roughness"],
     "inspection": ["inspection"],
 }
 
+VALID_PROCESS_TYPES = {
+    "machining",
+    "drilling",
+    "tapping",
+    "milling",
+    "surface_finishing",
+    "inspection",
+    "unknown"
+}
+
+
 def count_findings(findings: list, level: str) -> int:
-    return sum(1 for finding in findings if finding.get("level") == level)
+    return sum(1 for finding in findings if finding.get("severity") == level)
 
 
 def calculate_overall_score(scores: dict) -> float:
@@ -49,7 +61,7 @@ def evaluate_basis_validity(result) -> dict:
 
     if not processes:
         findings.append({
-            "level": "error",
+            "severity": "error",
             "category": "basis_validity",
             "message": "No manufacturing processes found. Cannot evaluate basis validity."
         })
@@ -64,10 +76,10 @@ def evaluate_basis_validity(result) -> dict:
         basis = getattr(process, "basis", None)
         process_name = getattr(process, "process_name", "unknown")
 
-        if basis is None or str(basis).strip() == "":
+        if not basis:
             missing_count += 1
             findings.append({
-                "level": "warning",
+                "severity": "warning",
                 "category": "basis_validity",
                 "message": f"Basis is missing for process: {process_name}"
             })
@@ -86,7 +98,7 @@ def evaluate_quantity_validity(result) -> dict:
 
     if not processes:
         findings.append({
-            "level": "error",
+            "severity": "error",
             "category": "quantity_validity",
             "message": "No manufacturing processes found. Cannot evaluate quantity validity."
         })
@@ -108,7 +120,7 @@ def evaluate_quantity_validity(result) -> dict:
         if quantity is None:
             invalid_count += 1
             findings.append({
-                "level": "warning",
+                "severity": "warning",
                 "category": "quantity_validity",
                 "message": f"Quantity is missing for process: {process_name}"
             })
@@ -118,14 +130,14 @@ def evaluate_quantity_validity(result) -> dict:
                 if q <= 0:
                     invalid_count += 1
                     findings.append({
-                        "level": "warning",
+                        "severity": "warning",
                         "category": "quantity_validity",
                         "message": f"Invalid quantity (<=0) for process: {process_name}"
                     })
             except (ValueError, TypeError):
                 invalid_count += 1
                 findings.append({
-                    "level": "warning",
+                    "severity": "warning",
                     "category": "quantity_validity",
                     "message": f"Non-numeric quantity for process: {process_name}"
                 })
@@ -141,68 +153,30 @@ def evaluate_quantity_validity(result) -> dict:
 def evaluate_quality_checkpoint_consistency(result) -> dict:
     findings = []
     processes = getattr(result, "manufacturing_processes", [])
-    checkpoints = getattr(result, "quality_checkpoints", [])
 
     if not processes:
         findings.append({
-            "level": "error",
+            "severity": "error",
             "category": "quality_checkpoint_consistency",
             "message": "No manufacturing processes found. Cannot evaluate checkpoint consistency."
         })
-        return {
-            "score": 0.0,
-            "findings": findings
-        }
+        return {"score": 0.0, "findings": findings}
 
-    if not checkpoints:
-        findings.append({
-            "level": "warning",
-            "category": "quality_checkpoint_consistency",
-            "message": "No quality checkpoints found."
-        })
-        return {
-            "score": 0.0,
-            "findings": findings
-        }
-
-    checkpoint_text = " ".join(
-        str(getattr(checkpoint, "checkpoint", "")) + " " + 
-        str(getattr(checkpoint, "reason", "")) + " " +
-        str(getattr(checkpoint, "inspection_method", ""))
-        for checkpoint in checkpoints
-    ).lower()
-
-    matched_count = 0
-    target_count = 0
+    missing_count = 0
 
     for process in processes:
-        process_name = str(getattr(process, "process_name", "")).lower()
+        process_name = getattr(process, "process_name", "unknown")
+        checkpoints = getattr(process, "quality_checkpoints", [])
 
-        for rule_process, checkpoint_keywords in PROCESS_TO_CHECKPOINT_RULES.items():
-            if rule_process in process_name:
-                target_count += 1
+        if not checkpoints:
+            missing_count += 1
+            findings.append({
+                "severity": "warning",
+                "category": "quality_checkpoint_consistency",
+                "message": f"No quality checkpoints found for process: {process_name}"
+            })
 
-                if any(keyword in checkpoint_text for keyword in checkpoint_keywords):
-                    matched_count += 1
-                else:
-                    findings.append({
-                        "level": "warning",
-                        "category": "quality_checkpoint_consistency",
-                        "message": f"No corresponding quality checkpoint found for process: {process_name}"
-                    })
-
-    if target_count == 0:
-        findings.append({
-            "level": "info",
-            "category": "quality_checkpoint_consistency",
-            "message": "No target process found for checkpoint consistency evaluation."
-        })
-        return {
-            "score": 1.0,
-            "findings": findings
-        }
-
-    score = matched_count / target_count
+    score = 1.0 - (missing_count / len(processes))
 
     return {
         "score": round(score, 3),
@@ -216,7 +190,7 @@ def evaluate_process_validity(result) -> dict:
 
     if not processes:
         findings.append({
-            "level": "error",
+            "severity": "error",
             "category": "process_validity",
             "message": "No manufacturing processes found."
         })
@@ -228,17 +202,25 @@ def evaluate_process_validity(result) -> dict:
     invalid_count = 0
 
     for i, process in enumerate(processes):
-        name = str(getattr(process, "process_name", "")).strip().lower()
+        process_type = str(getattr(process, "process_type", "")).strip().lower()
+        process_name = str(getattr(process, "process_name", "")).strip()
 
-        if not name or name in ("unknown", "n/a"):
+        # ① process_type の検証（主軸）
+        if process_type not in VALID_PROCESS_TYPES:
             invalid_count += 1
             findings.append({
-                "level": "warning",
+                "severity": "warning",
                 "category": "process_validity",
-                "message": f"Invalid or missing process name at index {i}"
+                "message": f"Invalid process_type '{process_type}' at index {i}"
             })
 
-    # スコア
+        if not process_name or process_name.lower() in ("unknown", "n/a"):
+            findings.append({
+                "severity": "info",
+                "category": "process_validity",
+                "message": f"Missing or unclear process_name at index {i}"
+            })
+
     score = 1.0 - (invalid_count / len(processes))
 
     return {
@@ -281,7 +263,10 @@ def evaluate_agent_output(agent_output: AgentOutput) -> EvaluationResult:
 
     if has_result:
         has_processes = len(result.manufacturing_processes) > 0
-        has_quality_checkpoints = len(result.quality_checkpoints) > 0
+        has_quality_checkpoints = any(
+            len(getattr(process, "quality_checkpoints", [])) > 0
+            for process in result.manufacturing_processes
+        )
 
         basis_result = evaluate_basis_validity(result)
         quantity_result = evaluate_quantity_validity(result)
@@ -349,6 +334,7 @@ def evaluate_agent_output(agent_output: AgentOutput) -> EvaluationResult:
         v2_result["scores"]["overall"] >= 0.8
         and v2_result["error_count"] == 0
         and v2_result["warning_count"] == 0
+        and error_count == 0
     )
 
 
