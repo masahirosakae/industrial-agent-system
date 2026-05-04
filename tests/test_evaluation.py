@@ -10,33 +10,39 @@ from src.harness.schema import (
 def test_evaluation_basic():
     processes = [
         ManufacturingProcess(
+            process_id="p1",
+            process_type="drilling",
             process_name="machining",
             description="Machine φ10 hole",
             target_feature="φ10 hole",
             quantity=4,
-            basis="Drawing indicates φ10 hole.",
+            basis=["Drawing indicates φ10 hole."],
+            quality_checkpoints=[
+                QualityCheckpoint(
+                    checkpoint_type="dimension_check",
+                    description="Confirm machined dimensions.",
+                    inspection_method="caliper",
+                    basis=["Inspection required after machining."],
+                )
+            ],
+            confidence=0.95,
+            needs_review=False,
         ),
         ManufacturingProcess(
+            process_id="p2",
+            process_type="inspection",
             process_name="inspection",
             description="Inspect machined feature",
             target_feature="φ10 hole",
             quantity=1,
-            basis="Inspection required after machining.",
+            basis=["Inspection required after machining."],
+            quality_checkpoints=[],
+            confidence=0.9,
+            needs_review=False,
         ),
     ]
 
-    checkpoints = [
-        QualityCheckpoint(
-            checkpoint="dimension_check",
-            reason="Confirm machined dimensions.",
-            inspection_method="caliper",
-        ),
-    ]
-
-    planning_result = PlanningResult(
-        manufacturing_processes=processes,
-        quality_checkpoints=checkpoints,
-    )
+    planning_result = PlanningResult(manufacturing_processes=processes)
 
     agent_output = AgentOutput(
         task_id="test_001",
@@ -48,8 +54,6 @@ def test_evaluation_basic():
     )
 
     evaluation = evaluate_agent_output(agent_output)
-
-    print(evaluation)
 
     assert 0.0 <= evaluation.score <= 1.0
     assert "basis_validity" in evaluation.metrics
