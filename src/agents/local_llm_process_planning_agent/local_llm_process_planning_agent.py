@@ -85,6 +85,10 @@ class LocalLLMProcessPlanningAgent:
     - 推測は禁止
 
     # checkpoint_type
+    - tapping: "thread_gauge_check"
+    - reaming: "hole_diameter_precision"
+    - surface_grinding: "flatness_check"
+    - turning: "outer_diameter_check"
     - drilling → "hole_diameter"
     - milling → "outer_dimension"
 
@@ -132,18 +136,11 @@ class LocalLLMProcessPlanningAgent:
 
                 process_type = p.get("process_type", "unknown")
 
-                if process_type == "drilling":
-                    default_checkpoint_type = "hole_diameter"
-                    default_process_name = "穴加工"
-                    default_target_feature = "穴"
-                elif process_type == "milling":
-                    default_checkpoint_type = "outer_dimension"
-                    default_process_name = "フライス加工"
-                    default_target_feature = "外形・面加工部"
-                else:
-                    default_checkpoint_type = "unknown_checkpoint"
-                    default_process_name = "unknown"
-                    default_target_feature = "unknown"
+                (
+                    default_checkpoint_type,
+                    default_process_name,
+                    default_target_feature,
+                ) = self._process_defaults(process_type)
 
                 raw_checkpoints = p.get("quality_checkpoints", [])
                 if not isinstance(raw_checkpoints, list) or not raw_checkpoints:
@@ -252,10 +249,13 @@ class LocalLLMProcessPlanningAgent:
                             )
                         )
 
-            if not processes:
-                fallback_process = self._fallback_process_from_input(agent_input)
-                if fallback_process is not None:
+            fallback_processes = self._fallback_processes_from_input(agent_input)
+            existing_process_types = {process.process_type for process in processes}
+            for fallback_process in fallback_processes:
+                if fallback_process.process_type not in existing_process_types:
+                    fallback_process.process_id = f"P{len(processes) + 1:03d}"
                     processes.append(fallback_process)
+                    existing_process_types.add(fallback_process.process_type)
 
             return PlanningResult(
                 manufacturing_processes=processes,
@@ -263,6 +263,19 @@ class LocalLLMProcessPlanningAgent:
             )
 
         except Exception as e:
+            fallback_processes = self._fallback_processes_from_input(agent_input)
+            if fallback_processes:
+                return PlanningResult(
+                    manufacturing_processes=fallback_processes,
+                    findings=[
+                        {
+                            "level": "warning",
+                            "category": "fallback_after_parse_error",
+                            "message": str(e),
+                        }
+                    ],
+                )
+
             return PlanningResult(
                 manufacturing_processes=[],
                 findings=[
@@ -274,9 +287,9 @@ class LocalLLMProcessPlanningAgent:
                 ],
             )
 
-    def _fallback_process_from_input(
+    def _fallback_processes_from_input(
         self, agent_input: AgentInput
-    ) -> ManufacturingProcess | None:
+    ) -> list[ManufacturingProcess]:
         text = "\n".join(
             [
                 agent_input.input_type,
@@ -287,55 +300,77 @@ class LocalLLMProcessPlanningAgent:
             ]
         )
 
-        if self._contains_any(text, ["穴", "φ", "Φ", "M", "ねじ", "タップ", "ヶ所"]):
-            checkpoint = QualityCheckpoint(
-                checkpoint_type="hole_diameter",
-                description="穴径確認",
-                inspection_method="measurement",
-                basis=["入力情報に穴加工を示す語が含まれるため"],
-            )
+        detected_process_types = []
+        detection_rules = [
+            ("tapping", ["タップ", "ねじ加工", "tapping"]),
+            ("reaming", ["リーマ", "reaming"]),
+            ("surface_grinding", ["平面研削", "研削", "surface_grinding"]),
+            ("turning", ["旋削", "turning"]),
+            ("milling", ["フライス", "面加工", "輪郭", "段付き", "ポケット", "milling"]),
+            ("drilling", ["穴加工", "穴_", "drilling"]),
+        ]
 
-            return ManufacturingProcess(
-                process_id="P001",
-                process_type="drilling",
-                process_name="穴加工",
-                description="入力情報に基づく穴加工",
-                target_feature="穴",
-                quantity=4 if "4" in text else 1,
-                basis=[
-                    "入力情報に穴、φ、M、ねじ、タップ、ヶ所のいずれかが含まれるため"
-                ],
-                quality_checkpoints=[checkpoint],
-                confidence=0.6,
-                needs_review=True,
-            )
+        for process_type, keywords in detection_rules:
+            if self._contains_any(text, keywords):
+                detected_process_types.append(process_type)
 
-        if self._contains_any(
-            text, ["フライス", "面加工", "外形", "輪郭", "段付き", "ポケット"]
+        if (
+            self._contains_any(text, ["M8", "M10", "M12", "M20"])
+            and "tapping" not in detected_process_types
+            and "drilling" not in detected_process_types
         ):
-            checkpoint = QualityCheckpoint(
-                checkpoint_type="outer_dimension",
-                description="外形寸法確認",
-                inspection_method="measurement",
-                basis=["入力情報にフライス加工を示す語が含まれるため"],
-            )
+            detected_process_types.append("drilling")
 
-            return ManufacturingProcess(
-                process_id="P001",
-                process_type="milling",
-                process_name="フライス加工",
-                description="入力情報に基づくフライス加工",
-                target_feature="外形・面加工部",
-                quantity=1,
-                basis=[
-                    "入力情報にフライス、面加工、外形、輪郭、段付き、ポケットのいずれかが含まれるため"
-                ],
-                quality_checkpoints=[checkpoint],
-                confidence=0.6,
-                needs_review=True,
-            )
+        return [
+            self._create_fallback_process(process_type, index)
+            for index, process_type in enumerate(detected_process_types, start=1)
+        ]
 
-        return None
+    def _fallback_process_from_input(
+        self, agent_input: AgentInput
+    ) -> ManufacturingProcess | None:
+        processes = self._fallback_processes_from_input(agent_input)
+        return processes[0] if processes else None
+
+    def _create_fallback_process(
+        self, process_type: str, index: int
+    ) -> ManufacturingProcess:
+        checkpoint_type, process_name, target_feature = self._process_defaults(
+            process_type
+        )
+        checkpoint = QualityCheckpoint(
+            checkpoint_type=checkpoint_type,
+            description=f"{process_name} quality check",
+            inspection_method="measurement",
+            basis=[f"Input text indicates {process_type}"],
+        )
+
+        return ManufacturingProcess(
+            process_id=f"P{index:03d}",
+            process_type=process_type,
+            process_name=process_name,
+            description=f"Input text indicates {process_name}",
+            target_feature=target_feature,
+            quantity=1,
+            basis=[f"Input text indicates process_type={process_type}"],
+            quality_checkpoints=[checkpoint],
+            confidence=0.6,
+            needs_review=True,
+        )
+
+    def _process_defaults(self, process_type: str) -> tuple[str, str, str]:
+        defaults = {
+            "drilling": ("hole_diameter", "穴加工", "穴"),
+            "milling": ("outer_dimension", "フライス加工", "外形・面加工部"),
+            "tapping": ("thread_gauge_check", "タップ加工", "ねじ部"),
+            "reaming": ("hole_diameter_precision", "リーマ加工", "精密穴"),
+            "surface_grinding": ("flatness_check", "平面研削", "平面"),
+            "turning": ("outer_diameter_check", "旋削", "外径"),
+        }
+        return defaults.get(
+            process_type,
+            ("unknown_checkpoint", "unknown", "unknown"),
+        )
 
     def _contains_any(self, text: str, keywords: list[str]) -> bool:
         return any(keyword in text for keyword in keywords)

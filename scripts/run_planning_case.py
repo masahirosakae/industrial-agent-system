@@ -24,6 +24,11 @@ CASE_FILE_PATHS = {
     "drilling": "穴_M8_4ヶ所.txt",
     "milling": "フライス_面加工_外形.txt",
     "unknown": "unknown_input_no_manufacturing_feature.txt",
+    "tapping": "タップ_M8_ねじ加工.txt",
+    "reaming": "リーマ仕上げ_穴径公差.txt",
+    "surface_grinding": "平面研削_表面粗さ_Ra0.8.txt",
+    "turning": "旋削_外径加工_シャフト.txt",
+    "mixed_process": "穴加工_タップ_フライス_表面仕上げ.txt",
 }
 
 

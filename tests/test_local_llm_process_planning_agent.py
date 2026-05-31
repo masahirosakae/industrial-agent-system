@@ -1,3 +1,5 @@
+import pytest
+
 from src.harness.schema import AgentInput, Source, Metadata
 from src.harness.evaluation import evaluate_agent_output
 from src.llm.base import LLMProvider, LLMResponse
@@ -106,3 +108,68 @@ def test_local_llm_agent_preserves_fallback_after_provider_response():
     assert output.result is not None
     assert len(output.result.manufacturing_processes) == 1
     assert output.result.manufacturing_processes[0].process_type == "drilling"
+
+
+@pytest.mark.parametrize(
+    ("file_path", "process_type", "checkpoint_type"),
+    [
+        ("タップ_M8_ねじ加工.txt", "tapping", "thread_gauge_check"),
+        ("リーマ仕上げ_穴径公差.txt", "reaming", "hole_diameter_precision"),
+        ("旋削_外径加工_シャフト.txt", "turning", "outer_diameter_check"),
+    ],
+)
+def test_local_llm_agent_fallback_supports_extended_processes(
+    file_path, process_type, checkpoint_type
+):
+    provider = StaticProvider('{"manufacturing_processes":[],"findings":[]}')
+    agent = LocalLLMProcessPlanningAgent(provider=provider)
+
+    output = agent.run(create_input(file_path))
+
+    assert output.result is not None
+    process = output.result.manufacturing_processes[0]
+    assert process.process_type == process_type
+    assert process.quality_checkpoints[0].checkpoint_type == checkpoint_type
+    assert process.needs_review is True
+    assert evaluate_agent_output(output).metrics["process_validity"] == 1.0
+
+
+def test_local_llm_agent_fallback_supports_surface_grinding_after_parse_error():
+    provider = StaticProvider("not valid JSON")
+    agent = LocalLLMProcessPlanningAgent(provider=provider)
+
+    output = agent.run(create_input("平面研削_表面粗さ_Ra0.8.txt"))
+
+    assert output.result is not None
+    process = output.result.manufacturing_processes[0]
+    assert process.process_type == "surface_grinding"
+    assert process.quality_checkpoints[0].checkpoint_type == "flatness_check"
+    assert process.needs_review is True
+    assert output.result.findings[0]["category"] == "fallback_after_parse_error"
+
+
+def test_local_llm_agent_fallback_supports_mixed_process_input():
+    provider = StaticProvider('{"manufacturing_processes":[],"findings":[]}')
+    agent = LocalLLMProcessPlanningAgent(provider=provider)
+
+    output = agent.run(create_input("穴加工_タップ_フライス_表面仕上げ.txt"))
+
+    assert output.result is not None
+    process_types = {
+        process.process_type for process in output.result.manufacturing_processes
+    }
+    assert {"drilling", "tapping", "milling"} <= process_types
+
+
+def test_local_llm_agent_parser_accepts_extended_process_type():
+    provider = StaticProvider(
+        '{"manufacturing_processes":[{"process_type":"turning"}],"findings":[]}'
+    )
+    agent = LocalLLMProcessPlanningAgent(provider=provider)
+
+    output = agent.run(create_input("unknown_input.txt"))
+
+    assert output.result is not None
+    process = output.result.manufacturing_processes[0]
+    assert process.process_type == "turning"
+    assert process.quality_checkpoints[0].checkpoint_type == "outer_diameter_check"

@@ -1,6 +1,6 @@
 import json
 
-from scripts.run_model_comparison import main, run_comparison
+from scripts.run_model_comparison import build_parser, main, run_comparison
 
 
 def create_success_output(provider_name: str, case_name: str) -> dict:
@@ -93,3 +93,22 @@ def test_main_prints_compact_summary(monkeypatch, tmp_path, capsys):
     assert "planning-case-drilling" in stdout
     assert "parse_success" in stdout
     assert "latency_sec" in stdout
+
+
+def test_parser_accepts_extended_cases():
+    args = build_parser().parse_args(
+        [
+            "--providers",
+            "ollama",
+            "--cases",
+            "tapping,reaming,surface_grinding,turning,mixed_process",
+        ]
+    )
+
+    assert args.cases == [
+        "tapping",
+        "reaming",
+        "surface_grinding",
+        "turning",
+        "mixed_process",
+    ]

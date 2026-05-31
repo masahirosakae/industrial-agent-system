@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from scripts.run_planning_case import create_case, main, run_case
 from src.llm.base import LLMProvider, LLMResponse
 
@@ -17,6 +19,26 @@ def test_create_case_uses_predefined_case_id():
 
     assert agent_input.task_id == "planning-case-drilling"
     assert "M8" in agent_input.source.file_path
+
+
+@pytest.mark.parametrize(
+    ("case_name", "expected_keyword"),
+    [
+        ("drilling", "M8"),
+        ("milling", "フライス"),
+        ("unknown", "unknown"),
+        ("tapping", "タップ"),
+        ("reaming", "リーマ"),
+        ("surface_grinding", "研削"),
+        ("turning", "旋削"),
+        ("mixed_process", "タップ"),
+    ],
+)
+def test_create_case_supports_predefined_cases(case_name, expected_keyword):
+    agent_input = create_case(case_name)
+
+    assert agent_input.task_id == f"planning-case-{case_name}"
+    assert expected_keyword in agent_input.source.file_path
 
 
 def test_run_case_uses_provider_and_returns_parsed_result():
