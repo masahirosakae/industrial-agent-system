@@ -4,7 +4,7 @@ A provider-agnostic, evaluation-first multi-agent system for industrial AI and m
 
 ![status](https://img.shields.io/badge/status-PoC-orange)
 ![phase](https://img.shields.io/badge/Phase1%20Quality%20Workflow-Completed-brightgreen)
-![tests](https://img.shields.io/badge/tests-248%20passed-brightgreen)
+![tests](https://img.shields.io/badge/tests-272%20passed-brightgreen)
 
 > Japanese README: [README.md](./README.md)
 
@@ -281,6 +281,15 @@ python scripts/run_quality_workflow.py \
   --output outputs/result.json
 ```
 
+Append a one-line JSONL trace entry for evaluation analytics:
+
+```bash
+python scripts/run_quality_workflow.py \
+  --provider fugu \
+  --output outputs/result.json \
+  --trace outputs/quality_workflow_runs.jsonl
+```
+
 ### Run with local Ollama
 
 ```bash
@@ -296,7 +305,22 @@ CLI options:
 --provider {ollama,fugu}
 --model MODEL
 --output OUTPUT
+--trace TRACE
+--include-raw-output
+--case-version CASE_VERSION
 ```
+
+### Workflow trace JSONL
+
+When `--trace PATH` is set, one line is appended per workflow run with a
+stable schema designed for Fugu / GPT / Claude comparison. Each line
+includes the `run_id`, `case_id`, `case_version`, `provider_name`, `model`,
+overall workflow status, `started_at` / `finished_at` / `total_latency_seconds`,
+per-step status and latency, and a flat `qea_scores` roll-up. Raw LLM
+outputs are excluded by default; pass `--include-raw-output` only for
+local debugging.
+
+QEA scores are normalized to the `0.0-1.0` range.
 
 ---
 
@@ -392,7 +416,7 @@ python -m pytest
 Current result:
 
 ```text
-248 passed
+272 passed
 1 deselected
 1 warning
 ```

@@ -23,6 +23,9 @@ from src.workflows import (
     QUALITY_WORKFLOW_NAME,
     QualityWorkflowInput,
     QualityWorkflowResult,
+    append_quality_workflow_trace,
+    build_quality_workflow_trace,
+    is_successful_agent_output,
     run_quality_workflow,
     workflow_result_to_dict,
 )
@@ -655,3 +658,364 @@ def test_workflow_result_round_trips_through_json():
     assert decoded["steps"]["quality_evaluation_agent"]["result"][
         "overall_judgement"
     ] == "accepted"
+
+
+
+# =========================================================
+# Latency / timing metadata is always populated
+# =========================================================
+def test_workflow_result_records_timing_metadata():
+    qia = MockAgent("quality_issue_analysis_agent", success_qia_output())
+    rca = MockAgent("root_cause_analysis_agent", success_rca_output())
+    cmp_ = MockAgent("countermeasure_planning_agent", success_cmp_output())
+    qea = MockAgent("quality_evaluation_agent", success_qea_output())
+
+    result = run_quality_workflow(
+        make_workflow_input(),
+        provider=StubProvider(),
+        provider_name="stub",
+        qia_agent=qia,
+        rca_agent=rca,
+        cmp_agent=cmp_,
+        qea_agent=qea,
+    )
+
+    assert result.started_at
+    assert result.finished_at
+    assert isinstance(result.total_latency_seconds, float)
+    assert result.total_latency_seconds >= 0.0
+    assert set(result.step_latencies) == {
+        "quality_issue_analysis_agent",
+        "root_cause_analysis_agent",
+        "countermeasure_planning_agent",
+        "quality_evaluation_agent",
+    }
+
+
+# =========================================================
+# is_successful_agent_output: gate is True only when every flag aligns
+# =========================================================
+def _lying_success(**overrides):
+    """A QIA output that claims status='success' but has at least one
+    inconsistent trust field."""
+    defaults = dict(
+        case_id="qw-001",
+        agent_name="quality_issue_analysis_agent",
+        status="success",
+        result=make_quality_issue_analysis(),
+        confidence=0.7,
+        errors=[],
+        notes=[],
+        needs_review=False,
+        parse_success=True,
+        schema_valid=True,
+        error_type=None,
+        raw_output="{}",
+    )
+    defaults.update(overrides)
+    return QualityIssueAgentOutput(**defaults)
+
+
+def test_is_successful_agent_output_accepts_full_success():
+    assert is_successful_agent_output(success_qia_output()) is True
+
+
+@pytest.mark.parametrize(
+    ("overrides", "reason"),
+    [
+        ({"parse_success": False}, "parse_success=False"),
+        ({"schema_valid": False}, "schema_valid=False"),
+        ({"needs_review": True}, "needs_review=True"),
+        ({"result": None}, "result=None"),
+    ],
+)
+def test_is_successful_agent_output_rejects_inconsistent_flags(overrides, reason):
+    assert is_successful_agent_output(_lying_success(**overrides)) is False, reason
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected_in_review"),
+    [
+        ({"parse_success": False}, "parse_success"),
+        ({"schema_valid": False}, "schema_valid"),
+        ({"needs_review": True}, "needs_review"),
+        ({"result": None}, "status"),
+    ],
+)
+def test_workflow_stops_when_status_success_but_other_flags_lie(
+    overrides, expected_in_review
+):
+    qia = MockAgent("quality_issue_analysis_agent", _lying_success(**overrides))
+    rca = MockAgent("root_cause_analysis_agent", success_rca_output())
+
+    result = run_quality_workflow(
+        make_workflow_input(),
+        provider=StubProvider(),
+        provider_name="stub",
+        qia_agent=qia,
+        rca_agent=rca,
+    )
+
+    # The workflow trusts is_successful_agent_output, not status alone.
+    assert result.status == "needs_review"
+    assert result.stopped_at == "quality_issue_analysis_agent"
+    assert list(result.steps) == ["quality_issue_analysis_agent"]
+    assert rca.calls == []
+    # The mock-injected fields above never produce a needs_review tagged
+    # review_reasons (QIA does not expose it). _collect_review_reasons must
+    # still produce something traceable.
+    assert result.review_reasons
+    joined = " ".join(result.review_reasons).lower()
+    assert (
+        expected_in_review.lower() in joined
+        or "status" in joined
+        or "error" in joined
+    )
+
+
+# =========================================================
+# case_id consistency at every step
+# =========================================================
+def test_workflow_stops_when_qia_case_id_mismatches():
+    bad = success_qia_output()
+    bad.case_id = "other-case"
+    qia = MockAgent("quality_issue_analysis_agent", bad)
+    rca = MockAgent("root_cause_analysis_agent", success_rca_output())
+
+    result = run_quality_workflow(
+        make_workflow_input(),  # case_id="qw-001"
+        provider=StubProvider(),
+        provider_name="stub",
+        qia_agent=qia,
+        rca_agent=rca,
+    )
+
+    assert result.status == "needs_review"
+    assert result.stopped_at == "quality_issue_analysis_agent"
+    assert rca.calls == []
+    assert any("case_id mismatch" in reason for reason in result.review_reasons)
+
+
+def test_workflow_stops_when_rca_case_id_mismatches():
+    bad = success_rca_output()
+    bad.case_id = "other-case"
+    qia = MockAgent("quality_issue_analysis_agent", success_qia_output())
+    rca = MockAgent("root_cause_analysis_agent", bad)
+    cmp_ = MockAgent("countermeasure_planning_agent", success_cmp_output())
+
+    result = run_quality_workflow(
+        make_workflow_input(),
+        provider=StubProvider(),
+        provider_name="stub",
+        qia_agent=qia,
+        rca_agent=rca,
+        cmp_agent=cmp_,
+    )
+
+    assert result.status == "needs_review"
+    assert result.stopped_at == "root_cause_analysis_agent"
+    assert cmp_.calls == []
+    assert any("case_id mismatch" in reason for reason in result.review_reasons)
+
+
+def test_workflow_stops_when_cmp_case_id_mismatches():
+    bad = success_cmp_output()
+    bad.case_id = "other-case"
+    qia = MockAgent("quality_issue_analysis_agent", success_qia_output())
+    rca = MockAgent("root_cause_analysis_agent", success_rca_output())
+    cmp_ = MockAgent("countermeasure_planning_agent", bad)
+    qea = MockAgent("quality_evaluation_agent", success_qea_output())
+
+    result = run_quality_workflow(
+        make_workflow_input(),
+        provider=StubProvider(),
+        provider_name="stub",
+        qia_agent=qia,
+        rca_agent=rca,
+        cmp_agent=cmp_,
+        qea_agent=qea,
+    )
+
+    assert result.status == "needs_review"
+    assert result.stopped_at == "countermeasure_planning_agent"
+    assert qea.calls == []
+    assert any("case_id mismatch" in reason for reason in result.review_reasons)
+
+
+def test_workflow_marks_needs_review_when_qea_case_id_mismatches():
+    bad = success_qea_output()
+    bad.case_id = "other-case"
+    qia = MockAgent("quality_issue_analysis_agent", success_qia_output())
+    rca = MockAgent("root_cause_analysis_agent", success_rca_output())
+    cmp_ = MockAgent("countermeasure_planning_agent", success_cmp_output())
+    qea = MockAgent("quality_evaluation_agent", bad)
+
+    result = run_quality_workflow(
+        make_workflow_input(),
+        provider=StubProvider(),
+        provider_name="stub",
+        qia_agent=qia,
+        rca_agent=rca,
+        cmp_agent=cmp_,
+        qea_agent=qea,
+    )
+
+    assert result.status == "needs_review"
+    assert result.stopped_at == "quality_evaluation_agent"
+    assert any("case_id mismatch" in reason for reason in result.review_reasons)
+
+
+# =========================================================
+# Workflow trace JSONL
+# =========================================================
+def test_append_trace_adds_one_jsonl_line(tmp_path):
+    qia = MockAgent("quality_issue_analysis_agent", success_qia_output())
+    rca = MockAgent("root_cause_analysis_agent", success_rca_output())
+    cmp_ = MockAgent("countermeasure_planning_agent", success_cmp_output())
+    qea = MockAgent("quality_evaluation_agent", success_qea_output())
+
+    result = run_quality_workflow(
+        make_workflow_input(),
+        provider=StubProvider(),
+        provider_name="fugu",
+        qia_agent=qia,
+        rca_agent=rca,
+        cmp_agent=cmp_,
+        qea_agent=qea,
+    )
+
+    trace_path = tmp_path / "trace.jsonl"
+    written = append_quality_workflow_trace(
+        result,
+        trace_path,
+        case_version="v1.0",
+        model="fugu-mini",
+    )
+
+    lines = trace_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    parsed = json.loads(lines[0])
+    assert parsed == written
+
+
+def test_trace_contains_required_evaluation_metadata(tmp_path):
+    qia = MockAgent("quality_issue_analysis_agent", success_qia_output())
+    rca = MockAgent("root_cause_analysis_agent", success_rca_output())
+    cmp_ = MockAgent("countermeasure_planning_agent", success_cmp_output())
+    qea = MockAgent("quality_evaluation_agent", success_qea_output())
+
+    result = run_quality_workflow(
+        make_workflow_input(),
+        provider=StubProvider(),
+        provider_name="fugu",
+        qia_agent=qia,
+        rca_agent=rca,
+        cmp_agent=cmp_,
+        qea_agent=qea,
+    )
+
+    trace = build_quality_workflow_trace(
+        result, case_version="v1.0", model="fugu-mini"
+    )
+
+    # Run-level fields
+    assert isinstance(trace["run_id"], str) and trace["run_id"]
+    assert trace["case_id"] == "qw-001"
+    assert trace["case_version"] == "v1.0"
+    assert trace["provider_name"] == "fugu"
+    assert trace["model"] == "fugu-mini"
+    assert trace["workflow_name"] == QUALITY_WORKFLOW_NAME
+    assert trace["workflow_status"] == "success"
+    assert trace["final_judgement"] == "accepted"
+
+    # Per-step metadata
+    step_names = [step["agent_name"] for step in trace["steps"]]
+    assert step_names == [
+        "quality_issue_analysis_agent",
+        "root_cause_analysis_agent",
+        "countermeasure_planning_agent",
+        "quality_evaluation_agent",
+    ]
+    for step in trace["steps"]:
+        for key in ("status", "needs_review", "parse_success", "schema_valid", "latency_seconds"):
+            assert key in step
+
+    # QEA scores roll-up
+    assert trace["qea_scores"] is not None
+    assert trace["qea_scores"]["approval_readiness"] == 0.85
+    assert trace["qea_scores"]["hallucination_risk"] == "low"
+    assert trace["qea_scores"]["overall_judgement"] == "accepted"
+
+
+def test_trace_excludes_raw_output_by_default():
+    qia = MockAgent("quality_issue_analysis_agent", success_qia_output())
+    rca = MockAgent("root_cause_analysis_agent", success_rca_output())
+    cmp_ = MockAgent("countermeasure_planning_agent", success_cmp_output())
+    qea = MockAgent("quality_evaluation_agent", success_qea_output())
+
+    result = run_quality_workflow(
+        make_workflow_input(),
+        provider=StubProvider(),
+        provider_name="stub",
+        qia_agent=qia,
+        rca_agent=rca,
+        cmp_agent=cmp_,
+        qea_agent=qea,
+    )
+
+    default_trace = build_quality_workflow_trace(result)
+    for step in default_trace["steps"]:
+        assert "raw_output" not in step
+
+    opt_in_trace = build_quality_workflow_trace(result, include_raw_output=True)
+    for step in opt_in_trace["steps"]:
+        assert "raw_output" in step
+
+
+def test_trace_is_json_serialisable_even_when_workflow_stops_early():
+    # An early stop must still produce a fully serialisable trace entry.
+    qia = MockAgent("quality_issue_analysis_agent", needs_review_qia_output())
+
+    result = run_quality_workflow(
+        make_workflow_input(),
+        provider=StubProvider(),
+        provider_name="stub",
+        qia_agent=qia,
+    )
+
+    trace = build_quality_workflow_trace(result, case_version="v1.0")
+    encoded = json.dumps(trace, ensure_ascii=False)
+    decoded = json.loads(encoded)
+    assert decoded["workflow_status"] == "needs_review"
+    assert decoded["stopped_at"] == "quality_issue_analysis_agent"
+    assert decoded["qea_scores"] is None
+
+
+# =========================================================
+# QEA needs_review review_reasons guarantee
+# =========================================================
+def test_qea_needs_review_review_reasons_are_never_empty_at_workflow_level():
+    """Whatever QEA returns, when status is needs_review the surfaced
+    review_reasons must be non-empty so reviewers always have a starting
+    point."""
+    qea_output = needs_review_qea_output()
+    qea_output.review_reasons = []  # paranoid: ensure workflow does not require QEA to populate this
+
+    qia = MockAgent("quality_issue_analysis_agent", success_qia_output())
+    rca = MockAgent("root_cause_analysis_agent", success_rca_output())
+    cmp_ = MockAgent("countermeasure_planning_agent", success_cmp_output())
+    qea = MockAgent("quality_evaluation_agent", qea_output)
+
+    result = run_quality_workflow(
+        make_workflow_input(),
+        provider=StubProvider(),
+        provider_name="stub",
+        qia_agent=qia,
+        rca_agent=rca,
+        cmp_agent=cmp_,
+        qea_agent=qea,
+    )
+
+    assert result.status == "needs_review"
+    assert result.stopped_at == "quality_evaluation_agent"
+    assert result.review_reasons, "workflow-level review_reasons must be non-empty"

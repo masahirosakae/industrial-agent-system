@@ -4,7 +4,7 @@ Industrial Agent System は、製造業務を対象とした **評価ファー�
 
 ![status](https://img.shields.io/badge/status-PoC-orange)
 ![phase](https://img.shields.io/badge/Phase1%20Quality%20Workflow-Completed-brightgreen)
-![tests](https://img.shields.io/badge/tests-248%20passed-brightgreen)
+![tests](https://img.shields.io/badge/tests-272%20passed-brightgreen)
 
 英語版: [README_EN.md](./README_EN.md)
 
@@ -276,6 +276,15 @@ python scripts/run_quality_workflow.py \
   --output outputs/result.json
 ```
 
+評価分析用に 1 行 1 run の JSONL trace を追記:
+
+```bash
+python scripts/run_quality_workflow.py \
+  --provider fugu \
+  --output outputs/result.json \
+  --trace outputs/quality_workflow_runs.jsonl
+```
+
 ### Ollama で実行
 
 ```bash
@@ -291,7 +300,19 @@ CLI オプション:
 --provider {ollama,fugu}
 --model MODEL
 --output OUTPUT
+--trace TRACE
+--include-raw-output
+--case-version CASE_VERSION
 ```
+
+### Workflow trace JSONL
+
+`--trace PATH` を指定すると、1 run につき 1 行の JSON エントリが追記されます。
+Fugu / GPT / Claude 比較評価の再現性確保が目的です。
+各エントリには `run_id`, `case_id`, `case_version`, `provider_name`, `model`, workflow 全体の status, `started_at` / `finished_at` / `total_latency_seconds`, 各 step の status と latency, および `qea_scores` のフラットな roll-up が含まれます。 raw LLM 出力はデフォルトで含めません
+（ローカルデバッグ時のみ `--include-raw-output` を使用）。
+
+QEA の各 score は `0.0-1.0` に正規化されています。
 
 ---
 
@@ -376,7 +397,7 @@ python -m pytest
 現在の結果:
 
 ```text
-248 passed
+272 passed
 1 deselected
 1 warning
 ```

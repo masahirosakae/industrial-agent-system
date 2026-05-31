@@ -1,5 +1,6 @@
 ﻿import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from time import perf_counter
@@ -10,6 +11,7 @@ if str(ROOT) not in sys.path:
 
 from src.workflows import (
     QualityWorkflowInput,
+    append_quality_workflow_trace,
     run_quality_workflow,
     workflow_result_to_dict,
 )
@@ -18,6 +20,7 @@ from src.workflows import (
 # -------------------------
 # Built-in manufacturing-quality sample case
 # -------------------------
+SAMPLE_CASE_VERSION = "v1.0"
 SAMPLE_CASE = QualityWorkflowInput(
     case_id="QW-001",
     process_name="screw tightening",
@@ -67,7 +70,36 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Optional path; if set, the full workflow result is written as JSON.",
     )
+    parser.add_argument(
+        "--trace",
+        type=Path,
+        help=(
+            "Optional path to a JSONL trace file. One workflow run appends "
+            "one line. Raw LLM outputs are excluded by default."
+        ),
+    )
+    parser.add_argument(
+        "--include-raw-output",
+        action="store_true",
+        help=(
+            "Include each agent's raw LLM output in the --trace entry. "
+            "Disabled by default to keep traces shareable."
+        ),
+    )
+    parser.add_argument(
+        "--case-version",
+        default=SAMPLE_CASE_VERSION,
+        help="Sample case version label recorded in the --trace entry.",
+    )
     return parser
+
+
+def _resolve_model_for_trace(provider: str, cli_model: str) -> str | None:
+    if provider == "ollama":
+        return cli_model
+    if provider == "fugu":
+        return os.getenv("FUGU_MODEL")
+    return None
 
 
 def _print_summary(workflow_result, latency_sec: float) -> None:
@@ -85,13 +117,17 @@ def _print_summary(workflow_result, latency_sec: float) -> None:
     for name, output in workflow_result.steps.items():
         status = getattr(output, "status", "unknown")
         error_type = getattr(output, "error_type", None)
-        print(f"  - {name}: status={status} error_type={error_type}")
+        step_latency = workflow_result.step_latencies.get(name)
+        print(
+            f"  - {name}: status={status} error_type={error_type} "
+            f"latency_sec={step_latency}"
+        )
 
     qea_output = workflow_result.steps.get("quality_evaluation_agent")
     qea_result = getattr(qea_output, "result", None) if qea_output else None
     if qea_result is not None:
         print()
-        print("QEA scores:")
+        print("QEA scores (normalized to 0.0-1.0):")
         print(
             f"  evidence_sufficiency:    {qea_result.evidence_sufficiency.get('score')}"
         )
@@ -129,9 +165,6 @@ def main(argv: list[str] | None = None) -> int:
             model=args.model,
         )
     except ValueError as error:
-        # Most commonly: provider environment is misconfigured (e.g. Fugu
-        # without FUGU_API_KEY). We do NOT want to leak Python tracebacks
-        # to the operator, just a clean message.
         print(f"Configuration error: {error}", file=sys.stderr)
         return 2
 
@@ -151,11 +184,32 @@ def main(argv: list[str] | None = None) -> int:
         print()
         print(f"saved: {args.output}")
 
+    if args.trace:
+        # Safe-side: a trace-write failure must not corrupt or hide the
+        # workflow result itself. Operators can re-run the trace from the
+        # saved --output JSON later if needed.
+        try:
+            trace_model = _resolve_model_for_trace(args.provider, args.model)
+            append_quality_workflow_trace(
+                workflow_result,
+                args.trace,
+                case_version=args.case_version,
+                model=trace_model,
+                include_raw_output=args.include_raw_output,
+            )
+            print(f"trace appended: {args.trace}")
+        except Exception as trace_error:  # noqa: BLE001 - we deliberately swallow
+            print(
+                f"WARNING: failed to append trace to {args.trace}: "
+                f"{type(trace_error).__name__}: {trace_error}",
+                file=sys.stderr,
+            )
+
     if workflow_result.status == "success":
         return 0
     if workflow_result.status == "needs_review":
         return 1
-    return 2  # failure
+    return 2
 
 
 if __name__ == "__main__":

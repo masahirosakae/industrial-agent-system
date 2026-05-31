@@ -290,10 +290,30 @@ class QualityEvaluationAgent:
         )
 
         if final_judgement == "needs_review":
+            # Contract: every needs_review return path must carry at least
+            # one human-readable review_reasons entry. If the LLM declared
+            # overall_judgement=needs_review without populating review_reasons
+            # and no policy override fired, inject a default so downstream
+            # tooling never sees ``needs_review=True`` paired with ``[]``.
+            if not merged_review_reasons:
+                merged_review_reasons = [
+                    "LLM reported overall_judgement=needs_review without "
+                    "populating review_reasons"
+                ]
             return QualityEvaluationAgentOutput(
                 case_id=eval_input.case_id,
                 status="needs_review",
-                result=result,
+                result=QualityEvaluationResult(
+                    evidence_sufficiency=result.evidence_sufficiency,
+                    hallucination_risk=result.hallucination_risk,
+                    rca_cmp_consistency=result.rca_cmp_consistency,
+                    countermeasure_quality=result.countermeasure_quality,
+                    verification_quality=result.verification_quality,
+                    approval_readiness=result.approval_readiness,
+                    overall_judgement=result.overall_judgement,
+                    review_reasons=list(merged_review_reasons),
+                    recommended_next_steps=result.recommended_next_steps,
+                ),
                 confidence=0.5,
                 errors=[],
                 notes=[
@@ -386,8 +406,7 @@ structured JSON object only.
 
 # Output rules
 - Return JSON only. No prose, no markdown, no code fences.
-- Each score must be a number between 0.0 and 1.0 (inclusive). Use one
-  decimal place (0.0, 0.1, ..., 1.0).
+- Each score must be a number between 0.0 and 1.0 (inclusive).
 - hallucination_risk.risk_level must be one of: low, medium, high.
 - overall_judgement must be one of: accepted, needs_review.
 - review_reasons MUST be non-empty when overall_judgement is "needs_review".

@@ -813,3 +813,39 @@ def test_agent_module_does_not_import_fugu_or_ollama_directly():
     assert "OllamaProvider" not in text
     assert "fugu_provider" not in text
     assert "ollama_provider" not in text
+
+
+
+def test_qea_needs_review_always_carries_non_empty_review_reasons():
+    """If the model declares overall_judgement="needs_review" but emits no
+    review_reasons AND no policy override fires, QEA must still surface at
+    least one human-readable reason."""
+    data = valid_data()
+    data["overall_judgement"] = "needs_review"
+    data["review_reasons"] = []  # explicitly empty
+
+    provider = RecordingProvider(response_text(data))
+    agent = QualityEvaluationAgent(provider=provider)
+
+    output = agent.run(make_input())
+
+    assert output.status == "needs_review"
+    assert output.needs_review is True
+    assert output.parse_success is True
+    assert output.schema_valid is True
+    assert output.error_type == "policy_review_required"
+    assert output.review_reasons, "needs_review must never carry empty review_reasons"
+    assert output.result.overall_judgement == "needs_review"
+    # The same reason is mirrored into the result for downstream traceability.
+    assert output.result.review_reasons == output.review_reasons
+
+
+def test_qea_prompt_does_not_force_a_specific_decimal_precision():
+    """Phase 1: the schema validator accepts any number in [0.0, 1.0]; the
+    prompt must not over-constrain the model to a single decimal place."""
+    provider = RecordingProvider(response_text(valid_data()))
+    agent = QualityEvaluationAgent(provider=provider)
+    agent.run(make_input())
+
+    rendered_prompt = provider.prompts[0].lower()
+    assert "one decimal place" not in rendered_prompt
