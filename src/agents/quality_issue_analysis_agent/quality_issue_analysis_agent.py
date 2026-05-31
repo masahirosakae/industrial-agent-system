@@ -71,10 +71,6 @@ class QualityIssueParseError(ValueError):
     pass
 
 
-class QualityIssueNonJSONResponseError(QualityIssueParseError):
-    pass
-
-
 class QualityIssueSchemaError(ValueError):
     pass
 
@@ -126,11 +122,7 @@ class QualityIssueAnalysisAgent:
             return self._needs_review_output(
                 issue_input=issue_input,
                 error=e,
-                error_type=(
-                    "non_json_response"
-                    if isinstance(e, QualityIssueNonJSONResponseError)
-                    else "parse_error"
-                ),
+                error_type="parse_error",
                 raw_output=raw_output,
                 parse_success=False,
                 schema_valid=False,
@@ -209,15 +201,20 @@ Analyze the following manufacturing quality issue and return a structured JSON o
 """.strip()
 
     # -------------------------
-    # JSON validation
+    # JSON parsing (strict whole-response only)
     # -------------------------
     def _parse_json_object(self, text: str) -> dict:
-        text = text.strip()
+        """Parse the entire LLM response as a single JSON object.
 
-        if "```" in text:
-            raise QualityIssueNonJSONResponseError(
-                "LLM response contains markdown code fences"
-            )
+        Mirrors :class:`RootCauseAnalysisAgent` for Phase 1 Quality
+        Workflow consistency: no prose/markdown tolerance, no code fence
+        stripping, no ``{`` / ``}`` substring extraction. Only the JSON
+        spec's surrounding whitespace is allowed (handled natively by
+        ``json.loads``). Any extra characters before or after the JSON
+        object raise :class:`QualityIssueParseError`.
+        """
+        if not isinstance(text, str):
+            raise QualityIssueParseError("LLM response must be a string")
 
         try:
             data = json.loads(text)

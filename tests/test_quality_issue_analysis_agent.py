@@ -236,7 +236,47 @@ def test_agent_rejects_code_fenced_json():
     assert output.needs_review is True
     assert output.parse_success is False
     assert output.schema_valid is False
-    assert output.error_type == "non_json_response"
+    # Aligned with RootCauseAnalysisAgent: code fences are simply invalid JSON
+    # and surface as a generic parse_error rather than a dedicated subtype.
+    assert output.error_type == "parse_error"
+    assert output.result is not None
+
+
+def test_strict_parser_accepts_pure_json_object():
+    provider = RecordingProvider(response_text(valid_data()))
+    agent = QualityIssueAnalysisAgent(provider=provider)
+
+    output = agent.run(make_input())
+
+    assert output.status == "success"
+    assert output.parse_success is True
+    assert output.schema_valid is True
+    assert output.error_type is None
+
+
+def test_strict_parser_allows_surrounding_whitespace_only():
+    # ``json.loads`` itself treats surrounding whitespace as JSON-valid.
+    provider = RecordingProvider("  \n" + response_text(valid_data()) + "\n  ")
+    agent = QualityIssueAnalysisAgent(provider=provider)
+
+    output = agent.run(make_input())
+
+    assert output.status == "success"
+    assert output.parse_success is True
+    assert output.schema_valid is True
+    assert output.error_type is None
+
+
+def test_strict_parser_does_not_raise_on_parse_failure():
+    # Any parse failure must surface as a needs_review fallback, never as
+    # an exception bubbling out of agent.run().
+    provider = RecordingProvider("definitely not JSON")
+    agent = QualityIssueAnalysisAgent(provider=provider)
+
+    output = agent.run(make_input())  # must not raise
+
+    assert output.status == "needs_review"
+    assert output.error_type == "parse_error"
     assert output.result is not None
 
 
