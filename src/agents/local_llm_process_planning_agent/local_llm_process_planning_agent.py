@@ -1,5 +1,4 @@
 import json
-import urllib.request
 
 from src.harness.schema import (
     AgentInput,
@@ -8,19 +7,27 @@ from src.harness.schema import (
     ManufacturingProcess,
     QualityCheckpoint,
 )
+from src.llm.base import LLMProvider
+from src.llm.factory import create_llm_provider
+from src.llm.ollama_provider import OllamaProvider
 
 
 class LocalLLMProcessPlanningAgent:
     agent_name = "local_llm_process_planning_agent"
 
-    def __init__(self, model: str = "qwen2.5:1.5b"):
+    def __init__(
+        self,
+        model: str = "qwen2.5:1.5b",
+        provider: LLMProvider | None = None,
+    ):
         self.model = model
         self.endpoint = "http://localhost:11434/api/generate"
+        self.provider = provider or create_llm_provider(ollama_model=self.model)
 
     def run(self, agent_input: AgentInput) -> AgentOutput:
         try:
             prompt = self._build_prompt(agent_input)
-            response_text = self._call_ollama(prompt)
+            response_text = self._call_llm(prompt)
 
             result = self._parse_response(response_text, agent_input)
 
@@ -48,24 +55,13 @@ class LocalLLMProcessPlanningAgent:
     # -------------------------
     # Ollama呼び出し
     # -------------------------
+    def _call_llm(self, prompt: str) -> str:
+        if isinstance(self.provider, OllamaProvider):
+            return self._call_ollama(prompt)
+        return self.provider.generate(prompt).text
+
     def _call_ollama(self, prompt: str) -> str:
-        payload = {
-            "model": self.model,
-            "prompt": prompt,
-            "stream": False,
-        }
-
-        req = urllib.request.Request(
-            self.endpoint,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-
-        with urllib.request.urlopen(req) as response:
-            data = json.loads(response.read().decode("utf-8"))
-
-        return data["response"]
+        return self.provider.generate(prompt).text
 
     # -------------------------
     # プロンプト（超重要）
