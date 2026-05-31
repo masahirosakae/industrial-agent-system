@@ -1,0 +1,401 @@
+﻿import json
+from dataclasses import asdict, dataclass, field
+from typing import Literal
+
+from src.llm.base import LLMProvider
+from src.llm.factory import create_llm_provider
+
+
+QualityIssueStatus = Literal["success", "failure", "needs_review"]
+
+
+# -------------------------
+# Input / Output schema
+# -------------------------
+@dataclass
+class QualityIssueInput:
+    """Input for QualityIssueAnalysisAgent."""
+
+    case_id: str
+    process_name: str
+    product_or_part: str
+    defect_mode: str
+    observed_symptoms: list[str] = field(default_factory=list)
+    process_conditions: dict = field(default_factory=dict)
+    known_constraints: list[str] = field(default_factory=list)
+    available_data: list[str] = field(default_factory=list)
+
+
+@dataclass
+class QualityIssueAnalysis:
+    issue_summary: str
+    suspected_causes: list[dict] = field(default_factory=list)
+    containment_actions: list[str] = field(default_factory=list)
+    investigation_plan: list[dict] = field(default_factory=list)
+    additional_data_needed: list[str] = field(default_factory=list)
+    risk_if_unresolved: str = ""
+    verification_points: list[str] = field(default_factory=list)
+
+
+@dataclass
+class QualityIssueAgentOutput:
+    case_id: str
+    agent_name: str
+    status: QualityIssueStatus
+    result: QualityIssueAnalysis | None
+    confidence: float
+    errors: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    needs_review: bool = False
+    parse_success: bool = False
+    schema_valid: bool = False
+    error_type: str | None = None
+    raw_output: str = ""
+
+
+# Required keys for downstream consumers / validators.
+QUALITY_ISSUE_OUTPUT_SCHEMA = (
+    "issue_summary",
+    "suspected_causes",
+    "containment_actions",
+    "investigation_plan",
+    "additional_data_needed",
+    "risk_if_unresolved",
+    "verification_points",
+)
+
+LIKELIHOOD_VALUES = {"high", "medium", "low"}
+
+
+class QualityIssueParseError(ValueError):
+    pass
+
+
+class QualityIssueNonJSONResponseError(QualityIssueParseError):
+    pass
+
+
+class QualityIssueSchemaError(ValueError):
+    pass
+
+
+# -------------------------
+# Agent
+# -------------------------
+class QualityIssueAnalysisAgent:
+    agent_name = "quality_issue_analysis_agent"
+    system_prompt = (
+        "You are an industrial quality issue analysis agent. "
+        "Return valid JSON only and do not invent measurements."
+    )
+
+    def __init__(
+        self,
+        model: str = "qwen2.5:1.5b",
+        provider: LLMProvider | None = None,
+        provider_name: str | None = None,
+    ):
+        self.model = model
+        self.provider = provider or create_llm_provider(
+            provider_name=provider_name,
+            ollama_model=self.model,
+        )
+
+    def run(self, issue_input: QualityIssueInput) -> QualityIssueAgentOutput:
+        raw_output = ""
+        try:
+            prompt = self._build_prompt(issue_input)
+            raw_output = self.provider.generate(
+                prompt,
+                system_prompt=self.system_prompt,
+            ).text
+        except Exception as e:
+            return self._needs_review_output(
+                issue_input=issue_input,
+                error=e,
+                error_type="provider_error",
+                raw_output=raw_output,
+                parse_success=False,
+                schema_valid=False,
+                note="LLM provider execution failed; returning conservative review result",
+            )
+
+        try:
+            data = self._parse_json_object(raw_output)
+        except Exception as e:
+            return self._needs_review_output(
+                issue_input=issue_input,
+                error=e,
+                error_type=(
+                    "non_json_response"
+                    if isinstance(e, QualityIssueNonJSONResponseError)
+                    else "parse_error"
+                ),
+                raw_output=raw_output,
+                parse_success=False,
+                schema_valid=False,
+                note="LLM output could not be parsed; returning conservative review result",
+            )
+
+        try:
+            self._validate_raw_analysis(data)
+        except Exception as e:
+            return self._needs_review_output(
+                issue_input=issue_input,
+                error=e,
+                error_type="schema_validation_error",
+                raw_output=raw_output,
+                parse_success=True,
+                schema_valid=False,
+                note="LLM output failed schema validation; returning conservative review result",
+            )
+
+        result = self._analysis_from_valid_data(data)
+        return QualityIssueAgentOutput(
+            case_id=issue_input.case_id,
+            agent_name=self.agent_name,
+            status="success",
+            result=result,
+            confidence=0.7,
+            errors=[],
+            notes=["Generated by LLM provider"],
+            needs_review=False,
+            parse_success=True,
+            schema_valid=True,
+            error_type=None,
+            raw_output=raw_output,
+        )
+
+    # -------------------------
+    # Prompt
+    # -------------------------
+    def _build_prompt(self, issue_input: QualityIssueInput) -> str:
+        payload = {
+            "process_name": issue_input.process_name,
+            "product_or_part": issue_input.product_or_part,
+            "defect_mode": issue_input.defect_mode,
+            "observed_symptoms": issue_input.observed_symptoms,
+            "process_conditions": issue_input.process_conditions,
+            "known_constraints": issue_input.known_constraints,
+            "available_data": issue_input.available_data,
+        }
+
+        return f"""
+Analyze the following manufacturing quality issue and return a structured JSON object only.
+
+# Input
+{json.dumps(payload, ensure_ascii=False, indent=2)}
+
+# Output rules
+- Return JSON only. No prose, no markdown, no code fences.
+- Do not invent measurements that are not implied by the input.
+- Suspected causes must reference the observed symptoms or process conditions.
+- likelihood must be one of: high, medium, low.
+
+# Required JSON schema
+{{
+  "issue_summary": "non-empty string",
+  "suspected_causes": [
+    {{"cause": "non-empty string", "evidence": "non-empty string", "likelihood": "high|medium|low"}}
+  ],
+  "containment_actions": ["non-empty string"],
+  "investigation_plan": [
+    {{"step": "non-empty string", "owner": "non-empty string", "expected_signal": "non-empty string"}}
+  ],
+  "additional_data_needed": ["string"],
+  "risk_if_unresolved": "non-empty string",
+  "verification_points": ["non-empty string"]
+}}
+""".strip()
+
+    # -------------------------
+    # JSON validation
+    # -------------------------
+    def _parse_json_object(self, text: str) -> dict:
+        text = text.strip()
+
+        if "```" in text:
+            raise QualityIssueNonJSONResponseError(
+                "LLM response contains markdown code fences"
+            )
+
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise QualityIssueParseError(f"Invalid JSON: {e}") from e
+
+        if not isinstance(data, dict):
+            raise QualityIssueParseError("LLM response is not a JSON object")
+        return data
+
+    def _validate_raw_analysis(self, data: dict) -> None:
+        errors: list[str] = []
+
+        missing_keys = [key for key in QUALITY_ISSUE_OUTPUT_SCHEMA if key not in data]
+        if missing_keys:
+            errors.append(f"missing required keys: {missing_keys}")
+
+        self._validate_non_empty_string(data, "issue_summary", errors)
+        self._validate_non_empty_string(data, "risk_if_unresolved", errors)
+        self._validate_string_list(data, "containment_actions", errors, require_non_empty=True)
+        self._validate_string_list(data, "additional_data_needed", errors, require_non_empty=False)
+        self._validate_string_list(data, "verification_points", errors, require_non_empty=True)
+        self._validate_suspected_causes(data.get("suspected_causes"), errors)
+        self._validate_investigation_plan(data.get("investigation_plan"), errors)
+
+        if errors:
+            raise QualityIssueSchemaError("; ".join(errors))
+
+    @staticmethod
+    def _validate_non_empty_string(data: dict, key: str, errors: list[str]) -> None:
+        value = data.get(key)
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"{key} must be a non-empty string")
+
+    @staticmethod
+    def _validate_string_list(
+        data: dict,
+        key: str,
+        errors: list[str],
+        require_non_empty: bool,
+    ) -> None:
+        value = data.get(key)
+        if not isinstance(value, list):
+            errors.append(f"{key} must be a list")
+            return
+        if require_non_empty and not value:
+            errors.append(f"{key} must not be empty")
+        invalid_items = [item for item in value if not isinstance(item, str)]
+        if invalid_items:
+            errors.append(f"{key} must contain only strings")
+        if require_non_empty and any(not item.strip() for item in value if isinstance(item, str)):
+            errors.append(f"{key} must contain non-empty strings")
+
+    @staticmethod
+    def _validate_suspected_causes(value, errors: list[str]) -> None:
+        if not isinstance(value, list):
+            errors.append("suspected_causes must be a list")
+            return
+        if not value:
+            errors.append("suspected_causes must not be empty")
+            return
+
+        for index, item in enumerate(value):
+            if not isinstance(item, dict):
+                errors.append(f"suspected_causes[{index}] must be an object")
+                continue
+            for key in ("cause", "evidence"):
+                item_value = item.get(key)
+                if not isinstance(item_value, str) or not item_value.strip():
+                    errors.append(f"suspected_causes[{index}].{key} must be a non-empty string")
+            likelihood = item.get("likelihood")
+            if likelihood not in LIKELIHOOD_VALUES:
+                errors.append(
+                    f"suspected_causes[{index}].likelihood must be one of {sorted(LIKELIHOOD_VALUES)}"
+                )
+
+    @staticmethod
+    def _validate_investigation_plan(value, errors: list[str]) -> None:
+        if not isinstance(value, list):
+            errors.append("investigation_plan must be a list")
+            return
+        if not value:
+            errors.append("investigation_plan must not be empty")
+            return
+
+        for index, item in enumerate(value):
+            if not isinstance(item, dict):
+                errors.append(f"investigation_plan[{index}] must be an object")
+                continue
+            for key in ("step", "owner", "expected_signal"):
+                item_value = item.get(key)
+                if not isinstance(item_value, str) or not item_value.strip():
+                    errors.append(f"investigation_plan[{index}].{key} must be a non-empty string")
+
+    @staticmethod
+    def _analysis_from_valid_data(data: dict) -> QualityIssueAnalysis:
+        return QualityIssueAnalysis(
+            issue_summary=data["issue_summary"],
+            suspected_causes=data["suspected_causes"],
+            containment_actions=data["containment_actions"],
+            investigation_plan=data["investigation_plan"],
+            additional_data_needed=data["additional_data_needed"],
+            risk_if_unresolved=data["risk_if_unresolved"],
+            verification_points=data["verification_points"],
+        )
+
+    def _needs_review_output(
+        self,
+        issue_input: QualityIssueInput,
+        error: Exception,
+        error_type: str,
+        raw_output: str,
+        parse_success: bool,
+        schema_valid: bool,
+        note: str,
+    ) -> QualityIssueAgentOutput:
+        return QualityIssueAgentOutput(
+            case_id=issue_input.case_id,
+            agent_name=self.agent_name,
+            status="needs_review",
+            result=self._fallback_result(issue_input, f"{error_type}: {error}"),
+            confidence=0.0,
+            errors=[str(error)],
+            notes=[note],
+            needs_review=True,
+            parse_success=parse_success,
+            schema_valid=schema_valid,
+            error_type=error_type,
+            raw_output=raw_output,
+        )
+
+    def _fallback_result(
+        self, issue_input: QualityIssueInput, reason: str
+    ) -> QualityIssueAnalysis:
+        summary = (
+            f"Review required for {issue_input.process_name} / "
+            f"{issue_input.product_or_part}: {issue_input.defect_mode}"
+        )
+        return QualityIssueAnalysis(
+            issue_summary=summary,
+            suspected_causes=[
+                {
+                    "cause": "analysis_not_available",
+                    "evidence": "LLM output was unavailable, malformed, or failed schema validation.",
+                    "likelihood": "low",
+                }
+            ],
+            containment_actions=[
+                "Do not use this fallback as an approved root cause analysis",
+                "Route the case to a human quality engineer for review under existing procedures",
+            ],
+            investigation_plan=[
+                {
+                    "step": "Inspect the raw LLM output and schema validation error",
+                    "owner": "quality_engineer",
+                    "expected_signal": "malformed or incomplete fields are identified",
+                },
+                {
+                    "step": "Rerun with stricter JSON-only instructions or a corrected provider response",
+                    "owner": "quality_engineer",
+                    "expected_signal": "valid structured output passes schema validation",
+                },
+            ],
+            additional_data_needed=[
+                "raw LLM output",
+                "schema validation error details",
+                "provider and model metadata",
+            ],
+            risk_if_unresolved=(
+                "The automated analysis cannot be trusted until reviewed; actual quality risk remains undetermined."
+            ),
+            verification_points=[
+                "Human reviewer confirms raw output and error details",
+                "Rerun output has parse_success=true and schema_valid=true",
+                f"Fallback reason: {reason}",
+            ],
+        )
+
+
+def analysis_to_dict(analysis: QualityIssueAnalysis | None) -> dict | None:
+    return asdict(analysis) if analysis else None

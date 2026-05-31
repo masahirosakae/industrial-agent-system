@@ -1,9 +1,12 @@
-import json
+﻿import json
 import os
 import urllib.error
 import urllib.request
 
 from src.llm.base import LLMProvider, LLMResponse
+
+
+_DEFAULT_TIMEOUT = object()
 
 
 class FuguProviderError(RuntimeError):
@@ -13,12 +16,16 @@ class FuguProviderError(RuntimeError):
 class FuguProvider(LLMProvider):
     def __init__(
         self,
-        timeout: int | None = 60,
+        timeout: int | None | object = _DEFAULT_TIMEOUT,
     ):
         self.api_key = os.getenv("FUGU_API_KEY")
         self.base_url = os.getenv("FUGU_BASE_URL")
         self.model = os.getenv("FUGU_MODEL")
-        self.timeout = timeout
+        self.timeout = (
+            int(os.getenv("FUGU_TIMEOUT_SECONDS", "180"))
+            if timeout is _DEFAULT_TIMEOUT
+            else timeout
+        )
 
         if not self.api_key:
             raise ValueError("FUGU_API_KEY is not set")
@@ -27,21 +34,31 @@ class FuguProvider(LLMProvider):
         if not self.model:
             raise ValueError("FUGU_MODEL is not set")
 
-    def generate(self, prompt: str) -> LLMResponse:
+    def generate(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+    ) -> LLMResponse:
         url = f"{self.base_url.rstrip('/')}/chat/completions"
+
+        messages = []
+        if system_prompt:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                }
+            )
+        messages.append(
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        )
 
         payload = {
             "model": self.model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are an industrial process planning agent. Return valid JSON only.",
-                },
-                {
-                    "role": "user",
-                    "content": prompt,
-                },
-            ],
+            "messages": messages,
             "temperature": 0.0,
         }
 

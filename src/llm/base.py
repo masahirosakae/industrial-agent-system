@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+﻿from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 
@@ -11,5 +11,9 @@ class LLMResponse:
 
 class LLMProvider(ABC):
     @abstractmethod
-    def generate(self, prompt: str) -> LLMResponse:
+    def generate(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+    ) -> LLMResponse:
         pass

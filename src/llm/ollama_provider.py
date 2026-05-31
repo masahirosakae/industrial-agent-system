@@ -1,4 +1,4 @@
-import json
+﻿import json
 import urllib.request
 
 from src.llm.base import LLMProvider, LLMResponse
@@ -15,10 +15,18 @@ class OllamaProvider(LLMProvider):
         self.endpoint = endpoint
         self.timeout = timeout
 
-    def generate(self, prompt: str) -> LLMResponse:
+    def generate(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+    ) -> LLMResponse:
+        full_prompt = prompt
+        if system_prompt:
+            full_prompt = f"{system_prompt}\n\n{prompt}"
+
         payload = {
             "model": self.model,
-            "prompt": prompt,
+            "prompt": full_prompt,
             "stream": False,
         }
 

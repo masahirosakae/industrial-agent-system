@@ -51,6 +51,27 @@ def test_ollama_provider_reproduces_generate_request(monkeypatch):
     )
 
 
+def test_ollama_provider_includes_optional_system_prompt(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["request"] = request
+        return FakeResponse({"response": "generated text"})
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    OllamaProvider().generate(
+        "quality issue prompt",
+        system_prompt="You are an industrial quality issue analysis agent.",
+    )
+
+    payload = json.loads(captured["request"].data.decode("utf-8"))
+    assert payload["prompt"] == (
+        "You are an industrial quality issue analysis agent.\n\n"
+        "quality issue prompt"
+    )
+
+
 def test_factory_defaults_to_ollama(monkeypatch):
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
 
@@ -83,18 +104,79 @@ def test_fugu_provider_uses_environment_variables(monkeypatch):
     monkeypatch.setenv("FUGU_API_KEY", "test-key")
     monkeypatch.setenv("FUGU_BASE_URL", "https://example.invalid/v1")
     monkeypatch.setenv("FUGU_MODEL", "test-fugu")
+    monkeypatch.delenv("FUGU_TIMEOUT_SECONDS", raising=False)
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
 
     response = FuguProvider().generate("hello")
 
     request = captured["request"]
+    payload = json.loads(request.data.decode("utf-8"))
     assert request.full_url == "https://example.invalid/v1/chat/completions"
     assert request.headers["Authorization"] == "Bearer test-key"
+    assert captured["timeout"] == 180
+    assert payload["messages"] == [{"role": "user", "content": "hello"}]
+    assert "process planning" not in json.dumps(payload).lower()
     assert response == LLMResponse(
         text="fugu text",
         model="test-fugu",
         provider="fugu",
     )
+
+
+def test_fugu_provider_uses_timeout_from_environment(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["timeout"] = timeout
+        return FakeResponse({"choices": [{"message": {"content": "fugu text"}}]})
+
+    monkeypatch.setenv("FUGU_API_KEY", "test-key")
+    monkeypatch.setenv("FUGU_BASE_URL", "https://example.invalid/v1")
+    monkeypatch.setenv("FUGU_MODEL", "test-fugu")
+    monkeypatch.setenv("FUGU_TIMEOUT_SECONDS", "240")
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    FuguProvider().generate("hello")
+
+    assert captured["timeout"] == 240
+
+
+def test_fugu_provider_explicit_timeout_overrides_environment(monkeypatch):
+    monkeypatch.setenv("FUGU_API_KEY", "test-key")
+    monkeypatch.setenv("FUGU_BASE_URL", "https://example.invalid/v1")
+    monkeypatch.setenv("FUGU_MODEL", "test-fugu")
+    monkeypatch.setenv("FUGU_TIMEOUT_SECONDS", "240")
+
+    assert FuguProvider(timeout=30).timeout == 30
+    assert FuguProvider(timeout=None).timeout is None
+
+
+def test_fugu_provider_uses_caller_system_prompt_without_planning_prompt(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["request"] = request
+        return FakeResponse({"choices": [{"message": {"content": "quality text"}}]})
+
+    monkeypatch.setenv("FUGU_API_KEY", "test-key")
+    monkeypatch.setenv("FUGU_BASE_URL", "https://example.invalid/v1")
+    monkeypatch.setenv("FUGU_MODEL", "test-fugu")
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    FuguProvider().generate(
+        "quality issue prompt",
+        system_prompt="You are an industrial quality issue analysis agent.",
+    )
+
+    payload = json.loads(captured["request"].data.decode("utf-8"))
+    assert payload["messages"] == [
+        {
+            "role": "system",
+            "content": "You are an industrial quality issue analysis agent.",
+        },
+        {"role": "user", "content": "quality issue prompt"},
+    ]
+    assert "process planning" not in json.dumps(payload).lower()
 
 
 def test_fugu_provider_requires_environment_variables(monkeypatch):
