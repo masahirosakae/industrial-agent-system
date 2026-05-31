@@ -9,7 +9,6 @@ from src.harness.schema import (
 )
 from src.llm.base import LLMProvider
 from src.llm.factory import create_llm_provider
-from src.llm.ollama_provider import OllamaProvider
 
 
 class LocalLLMProcessPlanningAgent:
@@ -19,15 +18,18 @@ class LocalLLMProcessPlanningAgent:
         self,
         model: str = "qwen2.5:1.5b",
         provider: LLMProvider | None = None,
+        provider_name: str | None = None,
     ):
         self.model = model
-        self.endpoint = "http://localhost:11434/api/generate"
-        self.provider = provider or create_llm_provider(ollama_model=self.model)
+        self.provider = provider or create_llm_provider(
+            provider_name=provider_name,
+            ollama_model=self.model,
+        )
 
     def run(self, agent_input: AgentInput) -> AgentOutput:
         try:
             prompt = self._build_prompt(agent_input)
-            response_text = self._call_llm(prompt)
+            response_text = self.provider.generate(prompt).text
 
             result = self._parse_response(response_text, agent_input)
 
@@ -51,17 +53,6 @@ class LocalLLMProcessPlanningAgent:
                 errors=[str(e)],
                 notes=["LLM execution failed"],
             )
-
-    # -------------------------
-    # Ollama呼び出し
-    # -------------------------
-    def _call_llm(self, prompt: str) -> str:
-        if isinstance(self.provider, OllamaProvider):
-            return self._call_ollama(prompt)
-        return self.provider.generate(prompt).text
-
-    def _call_ollama(self, prompt: str) -> str:
-        return self.provider.generate(prompt).text
 
     # -------------------------
     # プロンプト（超重要）

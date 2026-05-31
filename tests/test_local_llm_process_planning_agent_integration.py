@@ -17,7 +17,7 @@ def create_input(file_path: str, task_id: str = "llm_integration_001") -> AgentI
 
 def _require_local_llm(agent: LocalLLMProcessPlanningAgent) -> None:
     try:
-        agent._call_ollama("ping")
+        agent.provider.generate("ping")
     except Exception as exc:  # pragma: no cover - environment-dependent gate
         pytest.skip(f"Local LLM endpoint unavailable: {exc}")
 
