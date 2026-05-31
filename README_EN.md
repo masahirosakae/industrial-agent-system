@@ -1,249 +1,463 @@
-# Industrial Agent System
+﻿# Industrial Agent System
 
-A harness-first multi-agent system for manufacturing, designed to execute industrial workflows with reliability, reproducibility, and evaluation-driven control.
+A provider-agnostic, evaluation-first multi-agent system for industrial AI and manufacturing workflows.
 
 ![status](https://img.shields.io/badge/status-PoC-orange)
-![stage](https://img.shields.io/badge/stage-Ph.2-lightgrey)
-![license](https://img.shields.io/badge/license-TBD-blue)
+![phase](https://img.shields.io/badge/Phase1%20Quality%20Workflow-Completed-brightgreen)
+![tests](https://img.shields.io/badge/tests-248%20passed-brightgreen)
 
+> Japanese README: [README.md](./README.md)
 
+---
 
-## Overview
+## 1. Project Overview
 
-**Industrial Agent System** is a project that decomposes manufacturing workflows into modular “agents” and orchestrates them under a controlled execution framework (Harness).
+**Industrial Agent System** is a research-oriented project for building reliable AI-assisted workflows in manufacturing.
 
-The primary focus is **not building smarter AI models**, but designing a system that enables:
+The project focuses on:
 
-* reliable execution
-* reproducibility
-* traceability
-* continuous evaluation
+- **Industrial AI** for manufacturing quality and process workflows
+- **Manufacturing Workflow** decomposition into specialized agents
+- **Multi-Agent System** architecture with explicit hand-offs between agents
+- **Evaluation First** design rather than direct trust in LLM output
+- **Human Review Gate** for uncertain, malformed, or risky outputs
+- **Workflow Orchestration** that safely stops when any step requires review
 
-The project is currently in a research / proof-of-concept stage.
+The core idea is not to build a single autonomous model, but to build an industrial workflow system where every probabilistic LLM output is constrained, validated, evaluated, and gated before it can influence the next step.
 
+---
 
-
-## Current Status
-
-The following components have been implemented and validated:
-
-* schema v0.2 (AgentInput / AgentOutput / PlanningResult)
-* evaluation v0.2 (structure + quality metrics)
-* RuleBasedProcessPlanningAgent (deterministic baseline)
-* LocalLLMProcessPlanningAgent (Ollama + Qwen2.5 1.5B)
-* pytest-based E2E tests (drilling / milling / unknown)
-* Parser + Fallback mechanism for LLM output stabilization
-
-Instead of trusting LLM outputs directly, the system ensures correctness via:
+## 2. Current Status
 
 ```text
-LLM → Parser → Fallback → Evaluation
+Phase1 Quality Workflow Completed
 ```
 
-This project is currently at **Phase 2 (MVP Agent implementation complete)** and entering **Phase 3 (evaluation system expansion)**.
+Implemented and validated:
 
+- Provider Abstraction
+- Sakana Fugu Provider
+- Ollama Provider
+- Strict whole-response JSON parsing
+- Schema validation
+- Policy validation
+- `needs_review` fallback
+- Human review gate
+- Quality workflow orchestration
+- Integration tests
 
-## Vision
-
-The long-term goal is a **Full Automation Factory** —
-a system where manufacturing decisions and operations are autonomously executed by a network of agents.
-
-This project focuses on building the **first reliable step toward that vision**, starting from a practical and verifiable foundation.
-
-
-
-## Problem Statement
-
-Manufacturing environments face structural challenges:
-
-* shortage of skilled engineers and operators
-* loss of tacit knowledge due to generational shifts
-* heavy reliance on human judgment (e.g., drawings, planning, quality)
-* limitations of rule-based automation for non-deterministic tasks
-
-These problems require **re-architecting workflows as agent-based systems**, not just adding tools.
-
-
-
-## Core Concept
-
-The factory is modeled as a **system of interacting agents**:
-
-| Agent               | Responsibility            |
-| ------------------- | ------------------------- |
-| Order Agent         | Interpret orders          |
-| Planning Agent      | Process planning          |
-| Procurement Agent   | Material sourcing         |
-| Preparation Agent   | Setup and tooling         |
-| Manufacturing Agent | Execution control         |
-| Quality Agent       | Quality validation        |
-| Shipping Agent      | Shipment decisions        |
-| Improvement Agent   | Root cause & optimization |
-
-This decomposition is an initial hypothesis and will evolve.
-
-
-
-## Architecture
+Current pytest result:
 
 ```text
-AgentInput
-↓
-Agent (Rule-based / LLM)
-↓
-LLM (optional)
-↓
-Parser (structure normalization)
-↓
-Fallback (deterministic correction)
-↓
-PlanningResult (schema-compliant)
-↓
-Evaluation Harness
+248 passed
+1 deselected
+1 warning
 ```
 
-This enables:
+---
 
-* model-agnostic design
-* evaluation-driven iteration
-* reproducible behavior
+## 3. Implemented Agents
 
-This architecture separates probabilistic reasoning (LLM) from deterministic control (Harness).
+### QualityIssueAnalysisAgent
 
+Analyzes a manufacturing quality issue case and produces structured quality-issue analysis:
 
-## Harness-First Philosophy
+- issue summary
+- suspected causes
+- containment actions
+- investigation plan
+- additional data needed
+- unresolved risk
+- verification points
 
-The key design decision:
+### RootCauseAnalysisAgent
 
-> **Design the harness before the agent**
+Consumes `QualityIssueAnalysisAgent` output and performs structured root-cause analysis:
 
-LLM-based systems are inherently non-deterministic.
-Without constraints, they cannot guarantee reliability.
+- 5Why analysis
+- FTA-style decomposition
+- fact / assumption / hypothesis separation
+- missing evidence extraction
+- confidence assignment per cause hypothesis
 
-The Harness provides:
+### CountermeasurePlanningAgent
 
-* structured I/O schema
-* validation and constraints
-* execution control (timeout, retry, fallback)
-* evaluation metrics
-* logging and traceability
-* human-in-the-loop integration
+Consumes `RootCauseAnalysisAgent` output and plans quality countermeasures:
 
-This ensures:
+- containment actions
+- permanent actions
+- verification plan
+- risk assessment
+- priority recommendation
+- review reasons for provisional or evidence-limited plans
 
-* reproducibility
-* traceability
-* continuous improvement
+It uses RCA evidence signals such as:
 
+- `hypotheses[].confidence`
+- `five_why[].evidence_status`
+- top-level and hypothesis-level `missing_evidence`
 
+### QualityEvaluationAgent
 
-## Local LLM Agent (Current Limitation)
+Consumes `RootCauseAnalysisAgent` and `CountermeasurePlanningAgent` outputs and acts as the final quality gate:
 
-The LocalLLMProcessPlanningAgent uses Qwen via Ollama.
+- evidence sufficiency evaluation
+- hallucination-risk detection
+- RCA/CMP consistency check
+- countermeasure quality assessment
+- verification quality assessment
+- approval readiness scoring
+- final judgement: `accepted` or `needs_review`
 
-However:
+---
 
-* LLM output is not yet reliable
-* JSON structure may break
-* semantic interpretation is limited
+## 4. Architecture Principles
 
-Therefore:
+### Evaluation First
+
+LLM output is never treated as ground truth.
 
 ```text
-LLM output is NOT treated as ground truth
+LLM Output
+↓
+JSON Validation
+↓
+Schema Validation
+↓
+Policy Validation
+↓
+Human Review
 ```
 
-Instead:
+Each agent treats LLM generation as an input candidate that must pass deterministic validation before it can become a trusted result.
 
-1. Parse into schema
-2. Apply deterministic fallback
-3. Evaluate via harness
+### Provider Abstraction
 
-This design **absorbs LLM instability at the system level**.
+Agents depend on the abstract `LLMProvider` interface, not on concrete model SDKs.
 
-This reflects a design choice to prioritize system-level reliability over model-level performance.
+Supported providers:
 
+- **Sakana Fugu** via `FuguProvider`
+- **Ollama** via `OllamaProvider`
 
-## MVP Scope
+This allows the same workflow to be executed with local models or remote API providers without changing agent logic.
 
-* Input: drawing / specification
-* Output: structured manufacturing plan
-* Target: Planning Agent
-* Interface: CLI (planned)
-* Evaluation: continuous via harness
+### Strict Structured Outputs
 
-Goal:
+All Phase1 quality agents use strict structured output policy:
 
-> Replace part of human decision-making with reproducible assistance
+- whole-response JSON parse using `json.loads(text)`
+- no Markdown
+- no code fences
+- no prefix/suffix prose
+- no substring extraction from first `{` to last `}`
+- schema validation before dataclass conversion
+- policy validation after schema validation where needed
+- `needs_review` fallback instead of uncaught failure
 
+### Human Review Gate
 
+Every agent returns an explicit status. Workflow progression is gated by that status.
 
-## Testing
+```text
+status == success
+↓
+next step
 
-Test cases include:
+status != success
+↓
+stop workflow
+↓
+human review
+```
 
-* drilling detection
-* milling detection
-* unknown input handling
+`needs_review` outputs are never passed to downstream agents.
 
-LLM outputs are normalized via parser + fallback before evaluation.
+---
 
+## 5. Phase1 Quality Workflow
 
+The Phase1 Quality Workflow is now implemented as an orchestrated sequence:
 
-## Why This Matters
+```text
+QualityIssueAnalysisAgent  (QIA)
+↓
+RootCauseAnalysisAgent     (RCA)
+↓
+CountermeasurePlanningAgent (CMP)
+↓
+QualityEvaluationAgent     (QEA)
+```
 
-Industrial automation requires:
+Short form:
 
-* reproducibility
-* traceability
-* measurable quality
-* controlled failure behavior
+```text
+QIA
+↓
+RCA
+↓
+CMP
+↓
+QEA
+```
 
-Not just "smart AI", but **systems that can be trusted in real industrial environments**.
+Workflow module:
 
-This project focuses on building **trustworthy systems**, not just intelligent components.
+```text
+src/workflows/quality_workflow.py
+```
 
+Main orchestration API:
 
+```python
+run_quality_workflow(...)
+```
 
-## Roadmap
+CLI runner:
 
-* improve prompt stability
-* strengthen JSON parsing
-* introduce fine-tuned models (Unsloth + Qwen)
-* expand multi-agent interactions
-* extend evaluation metrics toward real-world KPIs
+```text
+scripts/run_quality_workflow.py
+```
 
+---
 
+## 6. Workflow Result States
 
-## Positioning
+### `success`
 
-This repository serves as:
+All four agents completed successfully, and `QualityEvaluationAgent` returned:
 
-* a reference implementation of harness-based AI systems
-* a reproducible foundation for industrial AI discussion
-* a system design approach for reliable AI agents
+```text
+overall_judgement == accepted
+```
 
+The workflow result is:
 
+```text
+status = success
+final_judgement = accepted
+stopped_at = None
+```
 
-## Disclaimer
+### `needs_review`
 
-* This is a PoC project (not production-ready)
-* No real industrial data is included
-* LLM outputs must always be reviewed by humans
-* Use at your own risk
+Any agent returned `needs_review`, or the final evaluation did not accept the result.
 
+The workflow stops immediately at the first non-success step:
 
+```text
+status = needs_review
+final_judgement = needs_review
+stopped_at = <agent_name>
+```
+
+Unexpected orchestration exceptions are also converted into a safe-side `needs_review` workflow result with exception details in `review_reasons`.
+
+---
+
+## 7. Running Examples
+
+### Run Phase1 Quality Workflow with Sakana Fugu
+
+Set Fugu environment variables first:
+
+```bash
+export FUGU_API_KEY="<your-key>"
+export FUGU_BASE_URL="https://<your-fugu-endpoint>/v1"
+export FUGU_MODEL="<your-fugu-model>"
+```
+
+Then run:
+
+```bash
+python scripts/run_quality_workflow.py --provider fugu
+```
+
+Save the full JSON workflow result:
+
+```bash
+python scripts/run_quality_workflow.py \
+  --provider fugu \
+  --output outputs/result.json
+```
+
+### Run with local Ollama
+
+```bash
+python scripts/run_quality_workflow.py \
+  --provider ollama \
+  --model qwen2.5:1.5b \
+  --output outputs/quality_workflow_ollama.json
+```
+
+CLI options:
+
+```text
+--provider {ollama,fugu}
+--model MODEL
+--output OUTPUT
+```
+
+---
+
+## 8. Sample Manufacturing Case
+
+The workflow runner includes a fixed sample manufacturing quality case:
+
+```text
+Case ID: QW-001
+Process: screw tightening
+Product/Part: aluminum bracket assembly
+Issue: intermittent screw loosening detected after vibration test
+
+Observed facts:
+- Loosening observed in 3 out of 20 samples after vibration test
+- Tightening torque target is 1.15 N.m
+- Defects concentrated in the night shift lot
+- No confirmed tool calibration record for the affected lot
+
+Known constraints:
+- Tightening cycle time must remain under 3 seconds per fastener
+- Cannot change screw specification in this build
+
+Available data:
+- Torque trace per fastener
+- Vibration test pass/fail log
+- Shift roster
+```
+
+---
+
+## 9. Project Goals
+
+This repository is intended as a foundation for:
+
+- Industrial AI workflow research
+- Manufacturing quality workflow support
+- Agent evaluation framework design
+- Sakana Fugu evaluation platform experimentation
+- Reproducible human-in-the-loop AI workflow design
+
+The project is a PoC/research system, not a production manufacturing-control system.
+
+---
+
+## 10. Repository Structure
+
+Key paths in the current implementation:
+
+```text
+src/
+  agents/
+    quality_issue_analysis_agent/
+    root_cause_analysis_agent/
+    countermeasure_planning_agent/
+    quality_evaluation_agent/
+    local_llm_process_planning_agent/
+    process_planning_agent/
+  llm/
+    base.py
+    factory.py
+    fugu_provider.py
+    ollama_provider.py
+  workflows/
+    quality_workflow.py
+  harness/
+
+scripts/
+  run_quality_workflow.py
+  run_quality_issue_case.py
+  run_quality_issue_comparison.py
+  run_planning_case.py
+  run_model_comparison.py
+
+tests/
+  test_quality_workflow.py
+  test_quality_issue_analysis_agent.py
+  test_root_cause_analysis_agent.py
+  test_countermeasure_planning_agent.py
+  test_quality_evaluation_agent.py
+```
+
+---
+
+## 11. Testing
+
+Run the full test suite:
+
+```bash
+python -m pytest
+```
+
+Current result:
+
+```text
+248 passed
+1 deselected
+1 warning
+```
+
+Integration tests cover:
+
+- agent success paths
+- strict JSON parse failures
+- schema validation failures
+- policy validation / override behavior
+- upstream trust gates
+- workflow early-stop behavior
+- JSON-serializable workflow result output
+
+---
+
+## 12. Roadmap
+
+### Completed
+
+- Phase1 Quality Workflow
+- Provider Abstraction
+- Sakana Fugu Provider
+- Ollama Provider
+- Strict JSON Validation
+- Schema Validation
+- Human Review Gate
+- Workflow Orchestration
+- Integration Tests
+
+### Planned
+
+- Benchmark Cases
+- Fugu / GPT / Claude Comparison
+- Workflow Analytics
+- Additional Manufacturing Agents
+- Broader manufacturing workflow orchestration beyond quality
+- Better trace logging and run-history analysis
+- Stable IDs for cross-agent references such as `hypothesis_id`
+
+---
+
+## 13. Disclaimer
+
+- This repository is a research / PoC project.
+- No real industrial production data is included.
+- LLM-generated outputs may contain errors and must be reviewed by humans before use.
+- The workflow is designed for decision support and evaluation, not autonomous production control.
+
+---
 
 ## Final Note
 
-Industrial AI is not about a single powerful model.
+Industrial AI is not only about stronger models.
 
 It is about:
 
-> structuring workflows, constraining behavior, and continuously evaluating outputs.
+```text
+structured workflows
++ constrained generation
++ deterministic validation
++ human review gates
++ continuous evaluation
+```
 
-Agents will evolve.  
-Harnesses will remain.  
-And systems that ensure reliability will define real-world AI adoption.
+This repository implements that foundation for manufacturing quality workflows.
 
-This repository is a commitment to building that foundation.
+

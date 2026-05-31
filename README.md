@@ -1,260 +1,440 @@
-# Industrial Agent System
+﻿# Industrial Agent System 日本語README
 
-量産工場の業務をAgent単位に分解し、Harness上で信頼性高く動かすためのMulti-Agent Systemを設計・検証するプロジェクト
+Industrial Agent System は、製造業務を対象とした **評価ファースト / Human Review Gate 前提** の Multi-Agent System 研究プロジェクトです。
 
 ![status](https://img.shields.io/badge/status-PoC-orange)
-![stage](https://img.shields.io/badge/stage-Ph.2-lightgrey)
-![license](https://img.shields.io/badge/license-TBD-blue)
+![phase](https://img.shields.io/badge/Phase1%20Quality%20Workflow-Completed-brightgreen)
+![tests](https://img.shields.io/badge/tests-248%20passed-brightgreen)
 
-## English Version
-For English README, see: [README_EN.md](./README_EN.md)
+英語版: [README_EN.md](./README_EN.md)
 
-## 概要
+---
 
-**Industrial Agent System** は、量産工場の業務プロセスを「Agent」という機能単位に分解し、それらを協調動作させるためのMulti-Agent Systemを構築するプロジェクトです。
-中核となる関心は、賢いAIモデルを作ることではなく、**Agentを安全・再現性高く動かすための仕組み(Harness)** を設計することにあります。
-現時点では研究・PoCフェーズであり、本番運用を保証するものではありません。
+## 1. プロジェクト概要
 
+**Industrial Agent System** は、製造現場の業務を複数の Agent に分解し、LLM の出力をそのまま信頼せず、検証・評価・人間レビューを通じて安全に扱うための研究用システムです。
 
-## 現在の到達状況（Current Status）
+主なキーワード:
 
-本プロジェクトは現在 PoC（概念実証）段階にあり、以下の機能を実装・検証済みです。
+- Industrial AI
+- Manufacturing Workflow
+- Multi-Agent System
+- Evaluation First
+- Human Review Gate
+- Workflow Orchestration
 
-- schema v0.2 実装（AgentInput / AgentOutput / PlanningResult）
-- evaluation v0.2 実装（構造・品質評価）
-- RuleBasedProcessPlanningAgent 実装（決定論ベース）
-- LocalLLMProcessPlanningAgent 実装（Ollama + Qwen2.5 1.5B）
-- pytest による E2E テスト（drilling / milling / unknown）
-- LLM出力に対する Parser + Fallback 補正機構
+このプロジェクトの中心は「より賢いAIモデルを作ること」ではなく、**LLMを産業ワークフローの中で安全に使うための仕組みを作ること** です。
 
-現在は「LLMの出力をそのまま信頼する」のではなく、Harness側で構造・品質を保証する設計を採用しています。
+---
 
-本プロジェクトは現在 **Ph.2（MVP Agent実装完了）/ Ph.3（評価基盤構築）進行中** の状態にあります。
-
-
-## ビジョン
-
-最終目標は **Full Automation Factory** ―― 工場のあらゆる意思決定と作業がAgentの集合体によって自律的に運営される状態です。
-このゴールには長い道のりが必要であることを理解した上で、本プロジェクトはその「最初の信頼できる一歩」を作ることに焦点を絞ります。
-
-
-## 課題
-
-製造業の現場では、以下の構造的課題が顕在化しています。
-
-- 熟練作業者・検査員・生産技術者の **慢性的な人手不足**
-- 世代交代による **暗黙知の喪失** と品質低下
-- 図面解釈・工程設計・品質判定など、**人の判断に依存する業務がボトルネック化**
-- 従来のRPAやルールベース自動化では、**非定型な判断業務をカバーできない**
-
-これらは個別ツールでは解決できず、**業務全体をAgentとして再設計するアプローチ** が必要だ、というのが本プロジェクトの問題認識です。
-
-
-## Industrial Agent System のコンセプト
-
-工場を **Agentの集合体** として捉えます。
-量産工場の業務を、以下のような機能単位に分解した初期仮説からスタートします。
-
-|Agent              |主な責務(想定)          |
-|-------------------|------------------|
-|Order Agent        |受注情報の解釈・正規化       |
-|Planning Agent     |生産計画・工程展開         |
-|Procurement Agent  |部材・外注の手配判断        |
-|Preparation Agent  |製造準備(治具、プログラム、段取り)|
-|Manufacturing Agent|製造実行の監視・指示        |
-|Quality Agent      |品質チェックポイントの設計・判定支援|
-|Shipping Agent     |出荷判定・梱包指示         |
-|Improvement Agent  |不具合分析・改善提案        |
-
-補足：
-各Agentの役割イメージとしては、図面解析や生産管理など既存の製造業向けAIプロダクトが担う機能領域を参考にしている。
-ただし本プロジェクトは特定製品の模倣ではなく、工場全体をMulti-Agent Systemとして再設計するための抽象化を目的とする。
-
-この分解は **初期仮説** です。Agentの粒度や境界は、検証を通じて継続的に見直します。固定的な組織図としては扱いません。
-特定企業・特定製品を模倣するのではなく、量産工場という業態全体を **抽象化されたMulti-Agent System** として捉え直すことが目的です。
-また、本システムでは単一Agentの最適化ではなく、複数Agentの相互作用による全体最適を前提とする。
-Agent間の依存関係や情報伝達はHarness上で制御される。
-
-
-## Harness-first の設計思想
-
-本プロジェクトの最重要設計判断は、**Agentよりも先にHarnessを設計する** ということです。
-LLMベースのAgentは単体では非決定的であり、出力の妥当性・再現性・追跡可能性を保証できません。だからこそ、Agentを枠にはめる仕組みを先に確立する必要があります。
-
-### Harnessが提供するもの
-
-- **入出力定義(Schema)** — Agentの入出力を構造化スキーマで厳密に定義
-- **バリデーション** — スキーマ・業務制約を満たすことを検証
-- **実行制御** — タイムアウト、リトライ、フォールバック、コスト制御
-- **評価(Evaluation)** — タスク成功率・出力品質・回帰検出の継続計測
-- **ログ・トレース** — すべての実行を後から再現・監査可能にする
-- **Human-in-the-loop** — 重要判断における人間の承認・介入ポイント
-
-### Harnessが達成するもの
-
-- **再現性** — 同じ入力に対する振る舞いを保証(または逸脱を検出)
-- **トレーサビリティ** — なぜその出力に至ったかを追跡可能にする
-- **評価可能性** — 品質を継続的に計測し、改善できる状態を保つ
-
-Agentの実装は差し替え可能(LLM・モデル・プロンプトは進化する)です。
-しかしHarnessは長期的資産として育てます。これが本プロジェクトの設計上の核心です。
-
-
-## アーキテクチャ概要
-
-本システムは以下の構造で動作します：
+## 2. 現在の状態
 
 ```text
-AgentInput
-↓
-Agent（Rule-based / Local LLM）
-↓
-LLM（任意：Ollama / API）
-↓
-Parser（構造補正）
-↓
-Fallback（ルール補完）
-↓
-PlanningResult（schema準拠）
-↓
-Evaluation Harness（品質評価）
+Phase1 Quality Workflow Completed
 ```
 
-この構造により、
+現在、品質問題に対する Phase1 Workflow が完成しています。
 
-- LLM非依存
-- 評価可能
-- 再現可能
+実装済み:
 
-なAgent設計を実現しています。
+- Provider Abstraction
+- Sakana Fugu Provider
+- Ollama Provider
+- Strict JSON Validation
+- Schema Validation
+- Policy Validation
+- Human Review Gate
+- Workflow Orchestration
+- Integration Tests
 
+pytest 結果:
 
-## MVP
-
-最初に取り組むMVPは以下です。
-
-- **入力**:図面(画像/PDF)または仕様書(構造化テキスト)
-- **出力**:加工工程・作業内容・数量・品質チェックポイントの構造化リスト
-- **対象Agent**:Planning Agent または Quality Agent から着手
-- **動作**:Harness上で動作し、評価ハーネスを通じて品質を継続計測
-- **配布形態**:CLIツール(初期想定)
-
-MVPの段階では業務の全自動化は目指しません。**「人が判断していた一部の工程を、Harness上で再現性をもって支援する」** ことをゴールとします。
-評価観点としては、精度・再現性・出力妥当性・人手削減効果などを指標とする。
-
-
-## Local LLM Agent の現状と制約
-
-LocalLLMProcessPlanningAgent は、Ollama + Qwen を用いたローカルLLM接続検証のための実装です。
-
-現時点では以下の制約があります：
-
-- LLM単体では安定した工程設計出力はできない
-- JSON構造の崩れやフィールド欠落が発生する
-- 入力理解の精度は限定的
-
-そのため本プロジェクトでは以下の構成を採用しています：
-
-1. LLM出力を Parser で schema準拠へ変換
-2. 不足情報を deterministic rule で補完（Fallback）
-3. Evaluation Harness により品質検証
-
-この設計により、LLMの不安定性を吸収しつつ、
-再現性のある評価可能な出力を実現しています。
-
-
-## なぜ重要か
-
-製造業の自動化において重要なのは、**「賢いAI」ではなく「信頼できる仕組み」** です。
-派手なデモや単発の高精度モデルでは、現場の業務には組み込めません。求められるのは、
-
-- 同じ入力に対して同じ振る舞いをする(再現性)
-- なぜそう判断したかを追える(トレーサビリティ)
-- 品質を継続的に計測できる(評価可能性)
-- 失敗時の振る舞いが定義されている(信頼性)
-
-これらを満たした系を作って初めて、製造業の現場でAgentに業務を任せる議論が始まります。本プロジェクトはその土台を作ることを目的としています。
-
-
-## リポジトリ構成
-
-構成は Ph.0〜Ph.2 の進行に合わせて変化します。下記は現時点の想定です。
-
-```
-.
-├── README.md               # このファイル
-├── PROJECT_CHARTER.md      # プロジェクト憲章(目的・スコープ・ロードマップ)
-├── docs/                   # アーキテクチャ・設計ドキュメント
-│   ├── architecture/       # システム構成図・設計判断
-│   ├── agents/             # Agent別の責務・契約
-│   ├── harness/            # Harness設計仕様
-│   └── architecture.md      # システムアーキテクト仕様
-├── src/                    # 実装コード
-│   ├── harness/            # Harness本体(schema、実行制御、評価、ログ)
-│   └── agents/             # 個別Agent実装
-├── evals/                  # 評価データセット・評価スクリプト
-├── samples/                # 抽象化されたサンプル入出力(架空データ)
-└── tests/                  # テストコード
+```text
+248 passed
+1 deselected
+1 warning
 ```
 
+---
 
-## テスト
+## 3. 実装済み Agent
 
-pytest により以下のケースを検証しています。
+### QualityIssueAnalysisAgent
 
-- drilling（穴加工）
-- milling（フライス加工）
-- unknown（工程なし）
+品質問題ケースを受け取り、品質問題の初期分析を行います。
 
-Local LLM Agent は不安定な出力を行う可能性があるため、
-Parser + Fallback により schema準拠の結果へ補正されます。
+主な出力:
 
+- issue_summary
+- suspected_causes
+- containment_actions
+- investigation_plan
+- additional_data_needed
+- risk_if_unresolved
+- verification_points
 
-## 位置づけ
+### RootCauseAnalysisAgent
 
-本リポジトリは以下の役割を担います。
+QualityIssueAnalysisAgent の出力を受け取り、根本原因分析を行います。
 
-- Industrial Agent System の **設計思想を表明する場**
-- Harness および MVP Agent の **リファレンス実装を提供する場**
-- 製造業×AI Agent 領域における **再現性ある議論の土台**
+主な責務:
 
-特定企業の業務システムではありません。製造業に関わる開発者・PM・研究者が、自身のドメインに応用できる汎用的な構成と知見を蓄積することを目的としています。
+- 5Why分析
+- FTA風の分解
+- Fact / Assumption / Hypothesis の分離
+- missing evidence の抽出
+- 原因仮説ごとの confidence 付与
 
-詳細は [PROJECT_CHARTER.md](./PROJECT_CHARTER.md) を参照してください。
+### CountermeasurePlanningAgent
 
+RootCauseAnalysisAgent の出力を受け取り、対策計画を作成します。
 
+主な責務:
 
-## 免責
+- 封じ込め対策
+- 恒久対策
+- 検証計画
+- リスク評価
+- 優先順位付け
+- evidence 不足時の review_reasons 生成
 
-- 本プロジェクトは **PoC(概念実証)段階** にあり、本番環境での利用を保証しません
-- 本リポジトリには、実在企業の機密情報・図面・業務データは一切含まれません。すべてのサンプルは抽象化・架空のものです
-- 本プロジェクトは特定の製品・サービスの推奨や、特定企業の業務代替を意図するものではありません
-- LLMの出力には誤りが含まれる可能性があるため、生成結果は必ず人間がレビューする前提で利用してください
-- 利用は自己責任でお願いします
+### QualityEvaluationAgent
 
+RootCauseAnalysisAgent と CountermeasurePlanningAgent の出力を受け取り、最終品質ゲートとして評価します。
 
-## 実行方法
+主な責務:
 
-### テスト実行
+- 根拠十分性評価
+- ハルシネーションリスク検出
+- RCA / CMP 整合性確認
+- 対策計画の妥当性評価
+- 検証計画の十分性評価
+- approval_readiness 評価
+- 最終判定 `accepted` / `needs_review`
+
+---
+
+## 4. アーキテクチャ原則
+
+### Evaluation First
+
+LLM 出力はそのまま正しいものとして扱いません。
+
+```text
+LLM Output
+↓
+JSON Validation
+↓
+Schema Validation
+↓
+Policy Validation
+↓
+Human Review
+```
+
+各 Agent は、LLM 出力を候補として扱い、決定論的な検証を通過した場合のみ次のステップへ渡します。
+
+### Provider Abstraction
+
+Agent は具体的な Provider 実装に依存せず、`LLMProvider` 抽象を通じて LLM を呼び出します。
+
+対応 Provider:
+
+- Sakana Fugu
+- Ollama
+
+### Strict Structured Outputs
+
+Phase1 Quality Workflow の Agent はすべて以下の方針に統一されています。
+
+- `json.loads(text)` による whole-response JSON parse
+- Markdown 禁止
+- code fence 禁止
+- JSON 前後の prose 禁止
+- `{` から `}` の substring 抽出禁止
+- schema validation
+- policy validation
+- `needs_review` fallback
+
+### Human Review Gate
+
+Workflow は各 Agent の `status` を見て次段に進むか停止するかを決定します。
+
+```text
+status == success
+↓
+next step
+
+status != success
+↓
+stop workflow
+↓
+human review
+```
+
+`needs_review` 状態の出力は、次段 Agent に渡されません。
+
+---
+
+## 5. Phase1 Quality Workflow
+
+現在の Workflow は以下です。
+
+```text
+QualityIssueAnalysisAgent  (QIA)
+↓
+RootCauseAnalysisAgent     (RCA)
+↓
+CountermeasurePlanningAgent (CMP)
+↓
+QualityEvaluationAgent     (QEA)
+```
+
+省略図:
+
+```text
+QIA
+↓
+RCA
+↓
+CMP
+↓
+QEA
+```
+
+実装場所:
+
+```text
+src/workflows/quality_workflow.py
+```
+
+実行スクリプト:
+
+```text
+scripts/run_quality_workflow.py
+```
+
+---
+
+## 6. Workflow Result States
+
+### success
+
+すべての Agent が `status="success"` で完了し、最終 Agent である QualityEvaluationAgent が以下を返した状態です。
+
+```text
+overall_judgement == accepted
+```
+
+Workflow Result:
+
+```text
+status = success
+final_judgement = accepted
+stopped_at = None
+```
+
+### needs_review
+
+任意の Agent が `needs_review` になった場合、または QualityEvaluationAgent が accepted と判断しなかった場合です。
+
+Workflow Result:
+
+```text
+status = needs_review
+final_judgement = needs_review
+stopped_at = <agent_name>
+```
+
+想定外例外も安全側に倒し、`needs_review` として返します。
+
+---
+
+## 7. 実行例
+
+### Sakana Fugu で実行
+
+環境変数を設定します。
 
 ```bash
-python -m pytest tests -v -s
+export FUGU_API_KEY="<your-key>"
+export FUGU_BASE_URL="https://<your-fugu-endpoint>/v1"
+export FUGU_MODEL="<your-fugu-model>"
 ```
 
-### Local LLM起動（Ollama）
+実行:
 
 ```bash
-ollama run qwen2.5:1.5b
+python scripts/run_quality_workflow.py --provider fugu
 ```
 
-※ Ollama は事前にインストールが必要です（https://ollama.com/）
+JSON 結果を保存:
 
+```bash
+python scripts/run_quality_workflow.py \
+  --provider fugu \
+  --output outputs/result.json
+```
+
+### Ollama で実行
+
+```bash
+python scripts/run_quality_workflow.py \
+  --provider ollama \
+  --model qwen2.5:1.5b \
+  --output outputs/quality_workflow_ollama.json
+```
+
+CLI オプション:
+
+```text
+--provider {ollama,fugu}
+--model MODEL
+--output OUTPUT
+```
+
+---
+
+## 8. サンプル製造品質ケース
+
+`run_quality_workflow.py` には、ねじ締結不良のサンプルケースが含まれています。
+
+```text
+Case ID: QW-001
+Process: screw tightening
+Product/Part: aluminum bracket assembly
+Issue: intermittent screw loosening detected after vibration test
+
+Observed facts:
+- Loosening observed in 3 out of 20 samples after vibration test
+- Tightening torque target is 1.15 N.m
+- Defects concentrated in the night shift lot
+- No confirmed tool calibration record for the affected lot
+
+Known constraints:
+- Tightening cycle time must remain under 3 seconds per fastener
+- Cannot change screw specification in this build
+
+Available data:
+- Torque trace per fastener
+- Vibration test pass/fail log
+- Shift roster
+```
+
+---
+
+## 9. プロジェクト目標
+
+本プロジェクトの目的:
+
+- Industrial AI workflow research
+- Manufacturing quality workflow support
+- Agent evaluation framework
+- Sakana Fugu evaluation platform
+- Human-in-the-loop AI workflow の設計検証
+
+---
+
+## 10. 主要ディレクトリ
+
+```text
+src/
+  agents/
+    quality_issue_analysis_agent/
+    root_cause_analysis_agent/
+    countermeasure_planning_agent/
+    quality_evaluation_agent/
+  llm/
+    base.py
+    factory.py
+    fugu_provider.py
+    ollama_provider.py
+  workflows/
+    quality_workflow.py
+
+scripts/
+  run_quality_workflow.py
+
+tests/
+  test_quality_workflow.py
+  test_quality_issue_analysis_agent.py
+  test_root_cause_analysis_agent.py
+  test_countermeasure_planning_agent.py
+  test_quality_evaluation_agent.py
+```
+
+---
+
+## 11. テスト
+
+全テスト実行:
+
+```bash
+python -m pytest
+```
+
+現在の結果:
+
+```text
+248 passed
+1 deselected
+1 warning
+```
+
+テスト対象:
+
+- 正常系
+- strict JSON parse failure
+- schema validation failure
+- policy validation / override
+- upstream trust gate
+- workflow early stop
+- workflow result JSON serialization
+
+---
+
+## 12. Roadmap
+
+### Completed
+
+- Phase1 Quality Workflow
+- Provider Abstraction
+- Sakana Fugu Provider
+- Ollama Provider
+- Workflow Orchestration
+- Integration Tests
+
+### Planned
+
+- Benchmark Cases
+- Fugu / GPT / Claude Comparison
+- Workflow Analytics
+- Additional Manufacturing Agents
+- Quality Workflow の trace logging / run history 強化
+- `hypothesis_id` など安定 ID による cross-agent reference 改善
+
+---
+
+## 13. 注意事項
+
+- 本リポジトリは研究 / PoC 用です。
+- 実製造データは含まれていません。
+- LLM 出力は必ず人間が確認してください。
+- 本システムは意思決定支援と評価を目的としており、自律的な製造制御を目的としていません。
+
+---
 
 ## 最後に
 
-製造業の自動化は、単一のすごいモデルや派手なデモで実現するものではありません。
-**業務を正しく分解し、振る舞いを枠にはめ、評価し続ける地道な仕組み** によってのみ、現場で信頼される系が育ちます。
+産業AIに必要なのは、単に強いモデルではありません。
 
-Agentは進化し、入れ替わります。しかし、Agentを安全に動かす土台は長く残ります。
+```text
+構造化されたワークフロー
++ 制約された生成
++ 決定論的な検証
++ Human Review Gate
++ 継続的な評価
+```
 
-このリポジトリは、その土台づくりへのコミットメントです。
+Industrial Agent System は、その土台を製造品質ワークフローから実装しています。
+
