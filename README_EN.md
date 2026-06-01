@@ -485,3 +485,18 @@ structured workflows
 This repository implements that foundation for manufacturing quality workflows.
 
 
+
+---
+
+## Datasets
+
+This repository includes benchmark and evaluation datasets for Phase1 Quality Workflow evaluation.
+
+- `datasets/benchmark/industrial_agent_benchmark_v1.jsonl`
+  - Original generated benchmark dataset.
+- `datasets/benchmark/industrial_agent_benchmark_v1_1.jsonl`
+  - Audited benchmark dataset.
+- `datasets/evaluation/phase1_eval_v1.jsonl`
+  - Fixed 20-case evaluation dataset for Phase1 model comparison.
+- `datasets/results/`
+  - Output directory for model evaluation traces.

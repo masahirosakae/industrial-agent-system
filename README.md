@@ -459,3 +459,18 @@ python -m pytest
 
 Industrial Agent System は、その土台を製造品質ワークフローから実装しています。
 
+
+---
+
+## データセット
+
+Phase1 Quality Workflow の評価用に、Benchmark Dataset と Evaluation Dataset を管理しています。
+
+- `datasets/benchmark/industrial_agent_benchmark_v1.jsonl`
+  - 初回生成版のベンチマークデータセット
+- `datasets/benchmark/industrial_agent_benchmark_v1_1.jsonl`
+  - 監査・改善版のベンチマークデータセット
+- `datasets/evaluation/phase1_eval_v1.jsonl`
+  - Phase1評価実験に使用する20ケース固定評価セット
+- `datasets/results/`
+  - Fugu / GPT-5.5 / Claude の評価結果出力先
